@@ -180,12 +180,12 @@ La documentación de planificación señala que los criterios originales de HU-0
 
 La propuesta para HU-01/T3 es un `GET /api/reports` con estos parámetros:
 
-| Parámetro | Obligatorio | Contrato |
-| --- | --- | --- |
-| `target` | Sí | URL de página para `scope=page`; URL o dominio para `scope=domain`. |
-| `scope` | Sí | `page` o `domain`. No se infiere para evitar resultados ambiguos. |
-| `limit` | No | Entero de 1 a 100; valor predeterminado 20. |
-| `cursor` | No | Cursor opaco devuelto por la página anterior para continuar el listado. |
+| Parámetro | Obligatorio | Contrato                                                                |
+| --------- | ----------- | ----------------------------------------------------------------------- |
+| `target`  | Sí          | URL de página para `scope=page`; URL o dominio para `scope=domain`.     |
+| `scope`   | Sí          | `page` o `domain`. No se infiere para evitar resultados ambiguos.       |
+| `limit`   | No          | Entero de 1 a 100; valor predeterminado 20.                             |
+| `cursor`  | No          | Cursor opaco devuelto por la página anterior para continuar el listado. |
 
 Ejemplos:
 
@@ -205,11 +205,11 @@ GET /api/reports?scope=domain&target=example.co.uk
 
 Ejemplos de correspondencia:
 
-| Solicitud | Clave o ámbito resultante |
-| --- | --- |
+| Solicitud                                                  | Clave o ámbito resultante                                                                                 |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
 | Página `https://shop.example.com/pricing?campaign=x#plans` | `https://shop.example.com/pricing`; no coincide con `http://shop.example.com/pricing` ni con `/pricing/`. |
-| Dominio `blog.shop.example.co.uk` | Dominio registrable `example.co.uk`; incluye sus subdominios, también `shop.example.co.uk`. |
-| Dominio `example.com` | Incluye `example.com` y `shop.example.com`; excluye `notexample.com` y `example.com.attacker.test`. |
+| Dominio `blog.shop.example.co.uk`                          | Dominio registrable `example.co.uk`; incluye sus subdominios, también `shop.example.co.uk`.               |
+| Dominio `example.com`                                      | Incluye `example.com` y `shop.example.com`; excluye `notexample.com` y `example.com.attacker.test`.       |
 
 #### Respuesta y paginación
 
