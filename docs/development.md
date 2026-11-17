@@ -4,7 +4,7 @@
 
 ## Puesta en marcha y organización
 
-El repositorio tiene dos _workspaces_ npm: `web/` (`@darkshield/web`) y `extension/` (`@darkshield/extension`), con un solo `package-lock.json` en la raíz. Se utiliza **Node.js 24.x**, **npm 11 o 12**, TypeScript estricto, ESLint y Prettier. El detalle de instalación, comandos y carga local de la extensión ya está explicado en el [README](../README.md) y no se repite aquí.
+El repositorio tiene dos _workspaces_ npm: `web/` (`@darkshield/web`) y `extension/` (`@darkshield/extension`), con un solo `package-lock.json` en la raíz. Se utiliza **Node.js 24.x**, **npm 11 o 12**, TypeScript estricto, ESLint y Prettier. El detalle de instalación, comandos y carga local de la extensión ya está explicado en el [README](../README.md) y no se repite aquí.  
 
 Para instalar dependencias se usa `npm ci`. Los comandos principales son `npm run dev:web`, `npm run dev:extension` y `npm run check` (formato, lint, tipos y compilación). Al instalar una dependencia específica de una aplicación, usar su _workspace_ y conservar el lockfile único.
 
