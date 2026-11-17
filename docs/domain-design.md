@@ -226,6 +226,31 @@ Si no hay coincidencias, devuelve `200 OK` con `items: []` y `nextCursor: null`;
 
 Una entrada o parámetro inválido devuelve `400 Bad Request` con un código de error estable y un mensaje que permita corregir la solicitud. Errores de autenticación/autorización, límites de uso y fallos del servicio se gestionan según las reglas de acceso y errores de HU-11/HU-01/T5; nunca se convierten en una lista vacía.
 
+#### HU-01/T4 y HU-01/T9 — Interfaz y mecanismo de consulta
+
+La pantalla inicial de la web presenta un campo de URL/dominio, una acción de
+consulta, el estado de resultados y una explicación de que los reportes son
+información comunitaria, no veredictos. Una búsqueda completada sin coincidencias
+se presentará como estado vacío; los errores de transporte o de validación se
+mostrarán por separado y permitirán reintentar o corregir la entrada. El listado
+mostrará únicamente resúmenes públicos del contrato anterior, ordenados por fecha,
+y permitirá continuar con `nextCursor`. No incluye la vista de detalle HU-02.
+
+El mecanismo previsto es una solicitud de solo lectura a
+`GET /api/reports?scope={page|domain}&target={encodedTarget}&limit={1..100}&cursor={opaque}`.
+Para página se usa URL absoluta; para dominio, dominio o URL HTTP(S). El cliente
+elimina query y fragmento antes de enviar y la API valida de nuevo la entrada,
+aplica la normalización WHATWG y las reglas de correspondencia descritas arriba.
+Una respuesta `200` con `items: []` es una búsqueda correcta sin coincidencias;
+`400` identifica una entrada inválida. Un error de servicio no se representa como
+lista vacía. Los datos de la respuesta se renderizan como reportes comunicados,
+sin inferir credibilidad cuando el campo no esté disponible.
+
+**Estado de implementación:** HU-01/T4 aporta la estructura visual del buscador,
+la navegación y los estados iniciales. El endpoint, los resultados, los filtros
+de ámbito y la paginación requieren HU-01/T3 y el modelo de HU-05 y permanecen
+pendientes. La pantalla indica esta limitación y no presenta datos de ejemplo.
+
 #### Integración y decisiones de implementación
 
 - HU-05 debe hacer consultable la página afectada por cada reporte con la clave definida aquí; la forma de persistir y derivar esa clave se resuelve al diseñar el modelo de reportes.
