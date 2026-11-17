@@ -29,12 +29,15 @@ export function prepareReportDraft(draft: ReportDraft): ReportDraftResult {
         errors.pageUrl = 'Usa una dirección web HTTP o HTTPS.';
       }
     } catch {
-      errors.pageUrl = 'Introduce una URL válida, por ejemplo https://ejemplo.com.';
+      errors.pageUrl =
+        'Introduce una URL válida, por ejemplo https://ejemplo.com.';
     }
   }
   if (!pattern) errors.pattern = 'Selecciona o escribe el patrón observado.';
-  if (description.length < 20) errors.description = 'Describe lo observado con al menos 20 caracteres.';
-  if (description.length > 2000) errors.description = 'La descripción no puede superar los 2000 caracteres.';
+  if (description.length < 20)
+    errors.description = 'Describe lo observado con al menos 20 caracteres.';
+  if (description.length > 2000)
+    errors.description = 'La descripción no puede superar los 2000 caracteres.';
 
   if (Object.keys(errors).length > 0) return { ok: false, errors };
   return { ok: true, report: { pageUrl, pattern, description } };
