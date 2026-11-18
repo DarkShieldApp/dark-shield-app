@@ -7,6 +7,8 @@ select plan(6);
 select ok((select cardinality(statements) > 0 from supabase_migrations.schema_migrations
   where version = '20261110154948'), 'CLI recorded the applied migration statements');
 
+-- Later tables that reference profiles (rolled back with the transaction).
+drop table public.report_evidences;
 alter table public.reports
   drop constraint reports_author_fkey;
 drop trigger auth_users_create_profile on auth.users;

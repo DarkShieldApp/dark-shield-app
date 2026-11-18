@@ -13,16 +13,19 @@ select ok(
   'Report evidences RLS enabled'
 );
 
-select results_eq(
-  $$select policyname::text, cmd::text, roles::text
-    from pg_policies
-    where schemaname = 'public' and tablename = 'report_evidences'
-    order by policyname$$,
-  $$values
-    ('report_evidences_insert_own_active', 'INSERT', '{authenticated}'),
-    ('report_evidences_select_visible', 'SELECT', '{authenticated}')$$,
-  'Only insert and read policies for authenticated users'
-);
+select policies_are('public', 'report_evidences', array[
+  'report_evidences_insert_own_active',
+  'report_evidences_select_visible'
+], 'Only insert and read policies');
+select policy_cmd_is('public', 'report_evidences',
+  'report_evidences_insert_own_active', 'insert', 'Insert policy covers INSERT');
+select policy_cmd_is('public', 'report_evidences',
+  'report_evidences_select_visible', 'select', 'Read policy covers SELECT');
+select policy_roles_are('public', 'report_evidences', p, array['authenticated'],
+  p || ' applies only to authenticated')
+from unnest(array[
+  'report_evidences_insert_own_active', 'report_evidences_select_visible'
+]) p;
 
 select ok(
   not has_table_privilege(r, 'public.report_evidences', p),

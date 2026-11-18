@@ -18,6 +18,8 @@ set display_name = 'Existing User',
     trust_level = 42
 where id = 'a1111111-1111-4111-8111-111111111111';
 
+-- report_evidences references reports (rolled back with the transaction).
+drop table public.report_evidences;
 drop table public.reports;
 
 select unnest(statements)

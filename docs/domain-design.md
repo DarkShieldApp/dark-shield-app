@@ -398,3 +398,23 @@ Los códigos son estables: T3 y T4 deben reutilizarlos en la interfaz y en la AP
 ### Fuera del alcance de T6
 
 Comprobar la firma no garantiza que el archivo sea inocuo. Quedan pendientes, para las tareas correspondientes de HU-06: análisis antivirus o de contenido activo en PDF, recodificación o eliminación de metadatos de imágenes, nombre de almacenamiento generado por el servidor (no usar el nombre del cliente como ruta), servicio y _bucket_ de almacenamiento (Supabase Storage sigue siendo la opción del [ADR-004](adr/0004-supabase-persistence.md)), control de acceso y relación de cada evidencia con su reporte y su autor.
+
+### Modelo persistente de evidencias (HU-06/T4a)
+
+**Estado:** migración `supabase/migrations/20261118170000_create_report_evidences.sql` con pruebas pgTAP (`report_evidences_model.test.sql` y `report_evidences_rls.test.sql`). Va apilada sobre el modelo de reportes de HU-05/T4, que aún no está en `main`. Implementa la tabla de la propuesta de contrato de HU-06/T4, que sigue pendiente de acordar. No incluye Storage, endpoints ni autenticación de la aplicación.
+
+- `public.report_evidences` guarda `id` (lo genera el servidor, sin valor por defecto), `report_id`, `uploaded_by`, `storage_path`, `original_name`, `mime_type`, `size_bytes`, `sha256`, `moderation_status` (`visible` u `hidden`, por defecto `visible`) y `created_at`.
+- Las restricciones reproducen `rules.ts`: lista blanca de MIME en minúsculas, de 1 byte a `EVIDENCE_MAX_FILE_BYTES` y las reglas del nombre (más la forma NFC). `sha256` son 64 caracteres hexadecimales en minúscula. `storage_path` debe ser exactamente `reports/{report_id}/{id}.{png|jpg|webp|pdf}`, con la extensión canónica del MIME, de modo que nunca contiene el nombre del usuario.
+- `UNIQUE (report_id, sha256)` impide aportar dos veces el mismo contenido a un reporte; su índice sirve también para consultar por reporte. `storage_path` es único y `uploaded_by` tiene índice.
+- Las dos claves ajenas usan `ON DELETE RESTRICT`: borrar un reporte o un perfil con evidencias falla, para no dejar archivos huérfanos.
+- **RLS:** la política de inserción exige que el autor sea `auth.uid()`, que su perfil esté activo, que el estado sea `visible` y que el reporte sea legible para quien inserta (se delega en la RLS de `reports`). La de lectura muestra las evidencias `visible` de reportes legibles. No hay políticas de actualización ni de borrado.
+- **Permisos revocados**, como en `reports`: ningún rol tiene privilegios sobre la tabla. Las pruebas de RLS conceden acceso solo dentro de su transacción revertida, con una política provisional de visibilidad de reportes, para comprobar el comportamiento previsto de las políticas.
+
+Falta para abrir el acceso:
+
+1. Visibilidad de los reportes (HU-05): política y `grant select` sobre `public.reports`. Sin ellos, las políticas de evidencias no dejan leer ni insertar nada.
+2. Modelo de sesión de los _route handlers_ (HU-11). Si usan la sesión del usuario, conceder `select` y `insert` solo sobre las columnas indicadas en el comentario final de la migración.
+3. Permiso explícito para aportar evidencias (HU-14/T3), que se añadirá a la política de inserción, y la moderación (quién puede pasar a `hidden`).
+4. Decisión de almacenamiento (HU-06/T1) y, con ella, las políticas del _bucket_ privado.
+
+Las pruebas `profiles_backfill` y `reports_backfill` reaplican migraciones anteriores borrando tablas; ahora eliminan antes `report_evidences` (dentro de su transacción revertida), porque la tabla y sus políticas dependen de `profiles` y `reports`.
