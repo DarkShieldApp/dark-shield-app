@@ -15,6 +15,18 @@ interface CategoryOption {
   readonly label: string;
 }
 
+interface ApiReportResponse {
+  report?: {
+    id: string;
+    title: string;
+  };
+  error?: {
+    code: string;
+    message: string;
+    details?: ReportValidationErrors;
+  };
+}
+
 const DARK_PATTERN_CATEGORIES: readonly CategoryOption[] = [
   {
     value: 'roach_motel',
@@ -60,11 +72,14 @@ export function ReportForm() {
     Partial<Record<ReportFieldName, boolean>>
   >({});
   const [hasSubmitAttempt, setHasSubmitAttempt] = useState(false);
-  const [validatedSuccess, setValidatedSuccess] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
+  const [createdReportId, setCreatedReportId] = useState<string | null>(null);
 
   function handleFieldChange(field: ReportFieldName, nextValue: string) {
     setValues((prev) => ({ ...prev, [field]: nextValue }));
-    setValidatedSuccess(false);
+    setServerError(null);
+    setCreatedReportId(null);
 
     if (touched[field] || hasSubmitAttempt) {
       const errorMessage = validateReportField(field, nextValue);
@@ -94,15 +109,16 @@ export function ReportForm() {
     });
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setHasSubmitAttempt(true);
+    setServerError(null);
+    setCreatedReportId(null);
 
     const result = validateReportForm(values);
     setErrors(result.errors);
 
     if (!result.valid) {
-      setValidatedSuccess(false);
       const firstInvalidField = (
         Object.keys(FIELD_ELEMENT_IDS) as ReportFieldName[]
       ).find((field) => Boolean(result.errors[field]));
@@ -112,7 +128,41 @@ export function ReportForm() {
       return;
     }
 
-    setValidatedSuccess(true);
+    setIsSubmitting(true);
+    try {
+      const response = await fetch('/api/reports', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(values),
+      });
+
+      const payload = (await response.json()) as ApiReportResponse;
+
+      if (!response.ok) {
+        if (payload.error?.details) {
+          setErrors(payload.error.details);
+        }
+        setServerError(
+          payload.error?.message ??
+            'No se pudo registrar el reporte en el servidor.',
+        );
+        return;
+      }
+
+      setCreatedReportId(payload.report?.id ?? 'registrado');
+      setValues(INITIAL_VALUES);
+      setErrors({});
+      setTouched({});
+      setHasSubmitAttempt(false);
+    } catch {
+      setServerError(
+        'Error de conexión con el servidor al intentar enviar el reporte.',
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   function handleReset() {
@@ -120,7 +170,8 @@ export function ReportForm() {
     setErrors({});
     setTouched({});
     setHasSubmitAttempt(false);
-    setValidatedSuccess(false);
+    setServerError(null);
+    setCreatedReportId(null);
   }
 
   const errorCount = Object.keys(errors).length;
@@ -132,6 +183,12 @@ export function ReportForm() {
           Revisa los campos marcados ({errorCount}{' '}
           {errorCount === 1 ? 'error pendiente' : 'errores pendientes'}) antes
           de enviar el reporte.
+        </div>
+      )}
+
+      {serverError && (
+        <div className="error-summary" role="alert">
+          {serverError}
         </div>
       )}
 
@@ -291,18 +348,22 @@ export function ReportForm() {
       </div>
 
       <div className="actions-row">
-        <button type="submit" className="btn-primary">
-          Enviar reporte
+        <button type="submit" className="btn-primary" disabled={isSubmitting}>
+          {isSubmitting ? 'Enviando reporte...' : 'Enviar reporte'}
         </button>
-        <button type="button" className="btn-secondary" onClick={handleReset}>
+        <button
+          type="button"
+          className="btn-secondary"
+          onClick={handleReset}
+          disabled={isSubmitting}
+        >
           Limpiar formulario
         </button>
       </div>
 
-      {validatedSuccess && (
+      {createdReportId && (
         <p className="success-notice" role="status">
-          Todos los campos obligatorios son válidos. En la siguiente tarea se
-          conectará el envío con el endpoint del servidor.
+          Reporte enviado y registrado correctamente (ID: {createdReportId}).
         </p>
       )}
     </form>
