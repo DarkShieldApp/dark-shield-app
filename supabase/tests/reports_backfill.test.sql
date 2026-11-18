@@ -18,6 +18,9 @@ set display_name = 'Existing User',
     trust_level = 42
 where id = 'a1111111-1111-4111-8111-111111111111';
 
+-- Remove the later HU-08 dependency only within this historical replay.
+alter table public.report_assessments
+  drop constraint report_assessments_report_fkey;
 drop table public.reports;
 
 select unnest(statements)
