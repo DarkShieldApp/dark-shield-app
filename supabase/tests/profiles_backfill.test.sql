@@ -7,6 +7,9 @@ select plan(6);
 select ok((select cardinality(statements) > 0 from supabase_migrations.schema_migrations
   where version = '20261110154948'), 'CLI recorded the applied migration statements');
 
+-- Remove the later HU-08 dependency only within this historical replay.
+alter table public.report_assessments
+  drop constraint report_assessments_assessor_fkey;
 alter table public.reports
   drop constraint reports_author_fkey;
 drop trigger auth_users_create_profile on auth.users;
