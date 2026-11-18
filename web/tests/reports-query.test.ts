@@ -184,9 +184,9 @@ describe('resolveQueryState (gestión de estados vacíos y errores en cliente)',
     const unknownCodeDefault = resolveQueryState({
       error: { code: 'UNKNOWN_CODE' },
     });
-    expect(unknownCodeDefault.message).toBe(
-      QUERY_ERROR_MESSAGES.INTERNAL_ERROR,
-    );
+    expect(unknownCodeDefault).toMatchObject({
+      message: QUERY_ERROR_MESSAGES.INTERNAL_ERROR,
+    });
   });
 });
 

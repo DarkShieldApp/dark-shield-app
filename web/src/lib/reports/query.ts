@@ -93,7 +93,7 @@ export function resolveQueryState(params: {
     const message =
       params.error.message ||
       QUERY_ERROR_MESSAGES[code] ||
-      QUERY_ERROR_MESSAGES.INTERNAL_ERROR;
+      'Ha ocurrido un error inesperado al consultar los reportes.';
     const canRetry = code === 'QUERY_FAILED' || code === 'SERVICE_UNAVAILABLE';
     return {
       status: 'error',
