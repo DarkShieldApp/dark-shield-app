@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ALLOWED_EVIDENCE_TYPES,
   EVIDENCE_ERROR_CODES,
   EVIDENCE_MAX_FILE_BYTES,
   EVIDENCE_MAX_FILES,
@@ -52,6 +53,14 @@ describe('contrato de reglas de evidencias', () => {
     });
   });
 
+  it('admite solo PNG, JPEG y WebP (sin PDF, decisión del PO)', () => {
+    expect(ALLOWED_EVIDENCE_TYPES).toEqual([
+      { kind: 'png', mimeType: 'image/png', extensions: ['png'] },
+      { kind: 'jpeg', mimeType: 'image/jpeg', extensions: ['jpg', 'jpeg'] },
+      { kind: 'webp', mimeType: 'image/webp', extensions: ['webp'] },
+    ]);
+  });
+
   it('propone 10 MiB por archivo, cinco archivos y 12 bytes de firma', () => {
     expect(EVIDENCE_MAX_FILE_BYTES).toBe(10_485_760);
     expect(EVIDENCE_MAX_FILES).toBe(5);
@@ -65,7 +74,6 @@ describe('archivos de evidencia válidos', () => {
     ['foto.jpg', 'image/jpeg', jpeg(), 'jpeg', 'jpg'],
     ['foto.jpeg', 'image/jpeg', jpeg(), 'jpeg', 'jpeg'],
     ['pantalla.webp', 'image/webp', webp(), 'webp', 'webp'],
-    ['factura.pdf', 'application/pdf', pdf(), 'pdf', 'pdf'],
   ] as const)('acepta %s (%s)', (name, type, head, kind, extension) => {
     expect(validateEvidenceFile({ name, type, size: 2048, head })).toEqual({
       ok: true,
@@ -170,6 +178,17 @@ describe('tipos no permitidos', () => {
     expectRejected(candidate({ name, type }), 'EVIDENCE_TYPE_NOT_ALLOWED');
   });
 
+  it.each([
+    ['PDF válido', 'factura.pdf', 'application/pdf', pdf()],
+    ['PDF con MIME de imagen', 'factura.pdf', 'image/jpeg', jpeg()],
+    ['PNG declarado como PDF', 'captura.png', 'application/pdf', png()],
+  ])('rechaza un %s: el PDF ya no se admite', (_case, name, type, head) => {
+    expectRejected(
+      { name, type, size: 2048, head },
+      'EVIDENCE_TYPE_NOT_ALLOWED',
+    );
+  });
+
   it.each(['', '   ', 'image/svg+xml', 'application/octet-stream'])(
     'rechaza el MIME declarado "%s"',
     (type) => {
@@ -192,8 +211,8 @@ describe('tipos no permitidos', () => {
 
 describe('contenido que no coincide con lo declarado', () => {
   it.each([
-    ['extensión PNG con MIME PDF', 'captura.png', 'application/pdf', pdf()],
-    ['extensión PDF con MIME JPEG', 'factura.pdf', 'image/jpeg', jpeg()],
+    ['extensión PNG con MIME JPEG', 'captura.png', 'image/jpeg', jpeg()],
+    ['extensión JPEG con MIME WebP', 'foto.jpg', 'image/webp', webp()],
     ['PNG declarado con bytes PDF', 'captura.png', 'image/png', pdf()],
     ['JPEG declarado con bytes PNG', 'foto.jpg', 'image/jpeg', png()],
     [
@@ -203,9 +222,9 @@ describe('contenido que no coincide con lo declarado', () => {
       withPadding([...ascii('RIFF'), 0, 0, 0, 0, ...ascii('WAVE')]),
     ],
     [
-      'PDF con contenido de texto',
-      'factura.pdf',
-      'application/pdf',
+      'PNG con contenido de texto',
+      'captura.png',
+      'image/png',
       new TextEncoder().encode('hola, mundo!'),
     ],
     ['cabecera truncada', 'captura.png', 'image/png', png().slice(0, 4)],
@@ -273,17 +292,23 @@ describe('envíos con varias evidencias', () => {
         candidate(),
         candidate({ size: 0 }),
         candidate({
+          name: 'pantalla.webp',
+          type: 'image/webp',
+          head: webp(),
+        }),
+        candidate({ name: 'programa.exe' }),
+        candidate({
           name: 'factura.pdf',
           type: 'application/pdf',
           head: pdf(),
         }),
-        candidate({ name: 'programa.exe' }),
       ]),
     ).toEqual({
       ok: false,
       errors: [
         { index: 1, code: 'EVIDENCE_EMPTY' },
         { index: 3, code: 'EVIDENCE_TYPE_NOT_ALLOWED' },
+        { index: 4, code: 'EVIDENCE_TYPE_NOT_ALLOWED' },
       ],
     });
   });
