@@ -11,7 +11,10 @@ export default function HomePage() {
           web de forma colaborativa.
         </p>
         <div className="actions-row">
-          <Link href="/reports/new" className="btn-primary">
+          <Link href="/consulta" className="btn-primary">
+            Consultar reportes
+          </Link>
+          <Link href="/reports/new" className="btn-secondary">
             Crear nuevo reporte
           </Link>
         </div>
