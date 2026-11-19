@@ -1,9 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 /**
- * Doble del cliente de Supabase para las pruebas del servicio de evidencias.
- * Reproduce solo las llamadas que hace el servicio, registra lo que recibe y
- * devuelve resultados configurables; la RLS real se prueba con pgTAP.
+ * Doble del cliente de Supabase para las pruebas de los servicios del servidor
+ * (evidencias y credibilidad). Reproduce solo las llamadas que hacen,
+ * registra lo que recibe y devuelve resultados configurables; la RLS real y
+ * las funciones SQL se prueban con pgTAP.
  */
 export interface FakeError {
   message: string;
@@ -30,6 +31,11 @@ export interface FakeSupabaseConfig {
   uploadError?: boolean;
   removeError?: boolean;
   signedUrlsError?: boolean;
+  /** Datos que devuelve `rpc` (HU-09/T2). */
+  rpcData?: unknown;
+  rpcError?: FakeError;
+  /** Si se define, `rpc` rechaza la promesa con este valor. */
+  rpcThrows?: unknown;
 }
 
 export interface FakeSupabaseCalls {
@@ -49,6 +55,7 @@ export interface FakeSupabaseCalls {
   removed: string[][];
   signedUrls: { paths: string[]; expiresIn: number }[];
   buckets: string[];
+  rpc: { name: string; args?: Record<string, unknown> }[];
 }
 
 type QueryResult = { data: unknown; error: unknown; count?: number | null };
@@ -162,6 +169,7 @@ export function createFakeSupabase(config: FakeSupabaseConfig = {}) {
     removed: [],
     signedUrls: [],
     buckets: [],
+    rpc: [],
   };
   const objects = config.objects ?? new Map<string, Blob>();
 
@@ -252,6 +260,12 @@ export function createFakeSupabase(config: FakeSupabaseConfig = {}) {
     },
     from(table: string) {
       return new FakeQuery(table, config, calls);
+    },
+    async rpc(name: string, args?: Record<string, unknown>) {
+      calls.rpc.push({ name, args });
+      if (config.rpcThrows !== undefined) throw config.rpcThrows;
+      if (config.rpcError) return { data: null, error: config.rpcError };
+      return { data: config.rpcData ?? null, error: null };
     },
     storage: {
       from(name: string) {
