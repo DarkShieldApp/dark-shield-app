@@ -587,3 +587,245 @@ Con la subida directa, el archivo original llega a Storage **antes** de que el s
 Las políticas que consultan `reports` necesitan que `authenticated` pueda leer esa tabla. Las pruebas de RLS emulan la visibilidad de los reportes dentro de su transacción revertida (sustituyen temporalmente las políticas de lectura de `reports`), de modo que no dependen de la política de lectura pública que se añade aparte.
 
 Las pruebas `profiles_backfill`, `reports_backfill` y `roles_backfill` reaplican migraciones anteriores borrando tablas o columnas; ahora eliminan antes `report_evidences` (dentro de su transacción revertida), porque la tabla y sus políticas dependen de `profiles`, `reports` y `profiles.role_code`.
+
+## Credibilidad de reportes (HU-09)
+
+**Requisito relacionado:** HU-09 — Consultar la credibilidad de un reporte.
+**Origen de esta definición:** HU-09, T1 — Diseñar un algoritmo de ponderación que distinga entre votos de usuarios según su nivel de confianza.
+**Estado:** diseño. No incluye código de producción ni migraciones: la implementación corresponde a HU-09/T2 (cálculo y acceso a datos), la explicación de factores a HU-09/T3, la invocación tras guardar una evidencia a HU-06/T5 y la presentación en el listado a HU-01/T7. Respeta el contrato acordado en la PR #13 (fila «Credibilidad (T5)» de las decisiones de HU-06/T4) y tiene en cuenta HU-10/T2–T3 (PR #28).
+
+### Criterios que debe cumplir
+
+- **HU-09:** el nivel es comprensible; se actualiza con nuevas evidencias, valoraciones u otra información; puede apoyarse en la IA, pero no depender de ella; la interfaz deja claro que es dinámico y no una garantía.
+- **HU-01:** no se da por cierto un reporte cuya credibilidad no esté suficientemente respaldada.
+- **RV-VAL-04 (HU-08):** una única validación o invalidación no determina por sí sola la veracidad del reporte.
+- **PR #13:** `recalculateReportCredibility` vive en `web/src/server/credibility.ts` (TypeScript, no SQL), es asíncrona y **estrictamente idempotente**: recalcula desde el estado completo, sin incrementos. Solo cuentan las evidencias con `moderation_status = 'visible'`; una oculta deja de contar, no resta.
+
+```ts
+export interface RecalculateContext {
+  cause:
+    | 'evidence_added'
+    | 'evidence_moderated'
+    | 'validation_added'
+    | 'manual_recalc';
+  triggerId?: string;
+}
+export interface CredibilityResult {
+  score: number; // 0-100
+  level: 'low' | 'medium' | 'high';
+  updatedAt: string;
+}
+export async function recalculateReportCredibility(
+  reportId: string,
+  context?: RecalculateContext,
+): Promise<CredibilityResult>;
+```
+
+### Entradas
+
+| Entrada                                  | Origen                            | Qué cuenta                                                                                                                                                                                                                                                                                                 |
+| ---------------------------------------- | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Evidencias visibles (`E`)                | `report_evidences`                | Filas del reporte con `moderation_status = 'visible'`. Cada contenido cuenta una sola vez: `UNIQUE (report_id, sha256)` ya impide repetirlo. Cuentan también las del autor del reporte. Una evidencia oculta deja de contar sin restar.                                                                    |
+| Valoraciones (`validate` / `invalidate`) | `report_assessments` + `profiles` | Solo la **última** valoración de cada valorador en el reporte (`created_at` descendente, `id` como desempate), y solo si el valorador **no es el autor** del reporte (`reports.author_id`) y su perfil está **activo** (`is_active`). Cada una pesa según el `trust_level` **actual** de quien la emitió.  |
+| Fecha del reporte                        | `reports.created_at`              | Solo para `updatedAt` cuando no hay otras entradas.                                                                                                                                                                                                                                                        |
+| Rol (`role_code`) y permisos efectivos   | —                                 | **No intervienen.** Un administrador pesa lo mismo que un colaborador con el mismo `trust_level`. Que el valorador tuviera `assessments.submit` y la confianza mínima se comprueba al registrar la valoración (HU-08), no al calcular: retirar el permiso más tarde no anula las valoraciones ya emitidas. |
+| IA                                       | —                                 | No interviene en esta versión. Si se añade, entrará como un término acotado más, igual que las evidencias (véase «Extensiones»), sin poder alcanzar por sí sola el nivel alto.                                                                                                                             |
+
+#### Escala y distribución de `trust_level` (HU-10)
+
+`profiles.trust_level` es un `SMALLINT` obligatorio en el intervalo 1–100, con valor inicial 1. HU-10/T2–T3 (PR #28) añadió la consulta de la confianza **propia** (`getMyProfile` en `web/src/server/profile-query.ts` y `GET /api/me/profile`) y la lista de acciones permitidas, pero **ninguna operación que modifique `trust_level`**: no hay función, API ni política de escritura, y `change_role` solo cambia el rol. En la práctica, mientras otra historia no defina cómo evoluciona, todos los perfiles valen 1. El valor 65 de `web/src/app/profile/page.tsx` es un dato de ejemplo hasta HU-11. `assessments.submit` se concede a los tres roles sin condición de confianza; el umbral sigue pendiente de HU-08 y HU-10.
+
+#### Peso de cada valorador
+
+```text
+w(t) = 0.25 + 0.75 · (t − 1) / 99        t = trust_level ∈ [1, 100]
+```
+
+| `trust_level` | 1    | 34   | 67   | 100  |
+| ------------- | ---- | ---- | ---- | ---- |
+| `w(t)`        | 0,25 | 0,50 | 0,75 | 1,00 |
+
+Justificación:
+
+- **Lineal.** La escala ya está acotada (1–100), así que una curva de saturación solo redistribuye pesos añadiendo un parámetro más y es más difícil de explicar («comprensible», HU-09). Además, al ser afín, la suma de los pesos de `n` valoraciones se obtiene de `n` y de la suma de sus `trust_level`: `Σw = 0.25·n + 0.75·(Σt − n)/99`. Así la base de datos devuelve solo agregados y **toda la fórmula vive en TypeScript**, como exige el contrato.
+- **Con suelo (0,25).** Hoy todos los perfiles valen 1. Sin suelo (`w = t/100`) cada valoración pesaría 0,01 y la credibilidad no se movería. Con el suelo, un colaborador nuevo cuenta un cuarto de uno con la máxima confianza: la confianza distingue (relación 1:4) sin anular la participación.
+- **Tope (1,0).** Ningún valorador aporta más de una unidad, y una sola valoración nunca basta para alcanzar el nivel alto o bajo (véase «Niveles y datos suficientes»).
+
+#### Peso de las evidencias
+
+Cada evidencia visible aporta 0,25 a favor (lo mismo que una validación de confianza mínima), con un tope total de 1,0 (4 evidencias): `Ev = min(0.25 · E, 1.0)`. Las evidencias respaldan el reporte, pero no lo confirman: con solo evidencias la puntuación máxima es 67 (nivel medio) y nunca hay datos suficientes, porque estos exigen valoradores.
+
+### Fórmula
+
+```text
+V   = Σ w(t) de las validaciones que cuentan
+I   = Σ w(t) de las invalidaciones que cuentan
+Ev  = min(0.25 · E, 1.0)
+P   = V + Ev                 (masa a favor)
+N   = I                      (masa en contra)
+score = clamp(round(100 · (P + 1) / (P + N + 2)), 0, 100)
+```
+
+Es la proporción de apoyo ponderado con **dos votos ficticios neutrales** (uno a favor y otro en contra, de peso 1): sin datos el resultado es exactamente **50**, y con pocos datos tiende a 50. Al crecer la masa, el resultado se acerca a la proporción real de apoyo. El cociente ya está entre 0 y 100; el `clamp` es una defensa. `round` es `Math.round` (al entero más próximo, 0,5 hacia arriba). Añadir una validación o una evidencia nunca baja la puntuación y añadir una invalidación nunca la sube.
+
+`updatedAt` es la fecha más reciente entre las entradas que cuentan (`created_at` de las evidencias visibles y de las valoraciones contadas) o, si no hay ninguna, `reports.created_at`. Es determinista y no usa el reloj. Limitación conocida: ocultar una evidencia, desactivar un perfil o cambiar un `trust_level` no tienen fecha propia, de modo que `updatedAt` puede no moverse (o retroceder) aunque cambie la puntuación.
+
+#### Niveles y datos suficientes
+
+```text
+sufficientData = assessors ≥ 2  y  P + N ≥ 1.0
+level = 'medium'                  si no sufficientData
+        'high'   si score ≥ 70    (con sufficientData)
+        'low'    si score < 40    (con sufficientData)
+        'medium' en otro caso
+```
+
+`assessors` es el número de valoradores distintos que cuentan (tras aplicar las reglas de las entradas). La comparación `P + N ≥ 1.0` usa una tolerancia de `1e-9` para que los errores de coma flotante no cambien el resultado en el límite.
+
+- **HU-01:** un reporte sin datos suficientes **nunca es `high`**, así que no se presenta como respaldado. Tampoco puede serlo con solo evidencias ni con un único valorador.
+- **RV-VAL-04:** se exigen al menos dos valoradores; una sola persona, por mucha confianza que tenga, no lleva el reporte a `high` ni a `low`. Por simetría, un único voto hostil tampoco hunde un reporte.
+- La masa mínima (1,0) evita que dos cuentas nuevas (0,5 en total) basten: hacen falta, por ejemplo, cuatro valoradores de confianza 1 o dos valoradores con evidencias.
+- Sin datos suficientes el nivel es `medium`, entendido como **indeterminado**. Para que la interfaz no lo confunda con «credibilidad moderada», el resultado incluye `sufficientData` (abajo) y HU-09/T3 debe mostrar «Datos insuficientes» en ese caso.
+
+#### Campos opcionales del resultado
+
+Se proponen dos campos **opcionales y aditivos**; no rompen el contrato de la PR #13 y quien solo lea `score`, `level` y `updatedAt` sigue funcionando. HU-09/T2 los rellena siempre.
+
+```ts
+export interface CredibilityFactors {
+  visibleEvidences: number; // E (antes del tope)
+  validations: number; // valoraciones 'validate' que cuentan
+  invalidations: number; // valoraciones 'invalidate' que cuentan
+  assessors: number; // validations + invalidations
+  supportWeight: number; // P, redondeado a 2 decimales
+  againstWeight: number; // N, redondeado a 2 decimales
+}
+
+export interface CredibilityResult {
+  score: number;
+  level: 'low' | 'medium' | 'high';
+  updatedAt: string;
+  sufficientData?: boolean;
+  factors?: CredibilityFactors;
+}
+```
+
+`factors` permite a HU-09/T3 explicar el resultado («3 validaciones, 1 invalidación, 2 evidencias») sin exponer quién valoró ni su confianza. El `context` de `recalculateReportCredibility` solo se usa para registrar la causa en los _logs_: **no cambia el resultado**, condición necesaria para la idempotencia.
+
+#### Presentación (HU-09/T3 y HU-01/T7)
+
+Mostrar el nivel con texto (no solo color), la indicación «Datos insuficientes» cuando `sufficientData` sea `false` y un aviso del tipo «La credibilidad cambia con nuevas evidencias y valoraciones; no es una garantía de que el patrón exista». Si la credibilidad no está disponible (error), se muestra el reporte sin inventarla (HU01-FL-06 y flujos alternativos de HU-01).
+
+### Reglas anti-abuso
+
+| Riesgo                                       | Regla del algoritmo                                                                                                                                                                                                                         |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| El autor valora su propio reporte            | Se ignora (`assessor_id = reports.author_id`), aunque HU-08 lo llegue a permitir o un operador SQL lo inserte. Sus **evidencias** sí cuentan, pero están acotadas y no generan datos suficientes.                                           |
+| Valoraciones repetidas                       | HU-08 aún no lo ha decidido (no hay `UNIQUE (report_id, assessor_id)`). El algoritmo supone **«solo la última por valorador»**: es equivalente si HU-08 impone unicidad y sigue siendo correcto si guarda historial.                        |
+| Cambio de opinión                            | Cuenta la última acción. Si HU-08 añade retirada, una valoración retirada no cuenta (véase «Pendiente de HU-08»).                                                                                                                           |
+| Muchas evidencias                            | Máximo 5 por colaborador y reporte (_trigger_ de HU-06), contenido único por reporte (`sha256`) y tope de 1,0 en la masa de evidencias: inundar de evidencias no supera 67.                                                                 |
+| Evidencias inapropiadas                      | La moderación las oculta y dejan de contar.                                                                                                                                                                                                 |
+| Cuentas desactivadas                         | Sus valoraciones dejan de contar mientras estén inactivas; vuelven a contar si se reactivan (el cálculo parte siempre del estado actual).                                                                                                   |
+| Un solo valorador decide                     | Imposible: hacen falta 2 valoradores y masa 1,0 para salir de `medium`.                                                                                                                                                                     |
+| Varias cuentas de confianza mínima (_sybil_) | **Riesgo residual.** Ocho cuentas nuevas coordinadas alcanzan `high`. Lo mitigan los controles de registro (HU-11), la evolución de la confianza (HU-10) y el umbral para valorar (HU-08). Los umbrales son constantes de `credibility.ts`. |
+
+### Acceso a datos
+
+#### Restricciones detectadas
+
+1. `report_assessments` no es legible por ningún rol de la API (`anon`, `authenticated` ni `service_role`): RLS sin políticas y privilegios revocados (HU-08/T3).
+2. `profiles` solo deja leer el perfil **propio** y activo; HU-10/T3 lo confirma (`getMyProfile`). Con el cliente del usuario no se puede leer el `trust_level` de otros valoradores.
+3. Los _handlers_ no usan `service_role` (decisión de la PR #13): trabajan como `authenticated` con el token Bearer o como `anon`.
+4. La credibilidad se muestra en la consulta pública de HU-01, que usa el cliente sin sesión (`anon`).
+5. `recalculateReportCredibility` se invoca desde la confirmación de evidencias (HU-06/T5) dentro de un `try/catch`: su fallo no puede cambiar el `201`.
+
+#### Opción A — Cálculo bajo demanda sin persistir (recomendada)
+
+- Un esquema `credibility_internal` **no expuesto** por PostgREST (`supabase/config.toml` solo expone `public` y `graphql_public`), con el patrón de `authorization_internal` en `20261119104009_role_permissions.sql`: `revoke all` del esquema y `grant usage` solo a los roles que lo necesiten.
+- `credibility_internal.report_inputs(report_ids uuid[])`: `SECURITY DEFINER`, `STABLE`, `search_path = ''`, referencias cualificadas, sin SQL dinámico y como mucho 100 identificadores (el `limit` máximo de `GET /api/reports`). Aplica las reglas de las entradas (evidencias visibles; última valoración por valorador, sin el autor y con perfil activo) y devuelve **solo agregados**, una fila por reporte:
+
+  | Columna                                   | Contenido                                                   |
+  | ----------------------------------------- | ----------------------------------------------------------- |
+  | `report_id`, `report_created_at`          | Identificador y fecha del reporte                           |
+  | `visible_evidences`, `latest_evidence_at` | Número de evidencias visibles y la más reciente             |
+  | `validations`, `validation_trust_sum`     | Número de validaciones que cuentan y suma de su confianza   |
+  | `invalidations`, `invalidation_trust_sum` | Número de invalidaciones que cuentan y suma de su confianza |
+  | `latest_assessment_at`                    | Fecha de la valoración contada más reciente                 |
+
+  Nunca devuelve `assessor_id`, `uploaded_by`, el `trust_level` individual ni filas de valoraciones.
+
+- `public.report_credibility_inputs(report_ids uuid[])`: envoltorio `SECURITY INVOKER` que pasa a la función interna **solo los identificadores que la RLS de `reports` deja ver** a quien llama. Así, cuando la moderación añada estados de reporte, la credibilidad respetará la visibilidad sin duplicar la regla.
+- `grant execute` sobre ambas funciones (y `usage` del esquema) a `anon` y `authenticated`; nada para `service_role` ni `PUBLIC`.
+- TypeScript (`credibility.ts`) llama al envoltorio por RPC, calcula los pesos con `Σw = 0.25·n + 0.75·(Σt − n)/99` y aplica la fórmula en una función pura (`computeCredibility`). `recalculateReportCredibility` = obtener agregados, calcular y devolver; no escribe nada. Puede usar el cliente sin sesión (`createServerSupabaseClient()`), porque los agregados son públicos, o recibir un cliente en un tercer parámetro opcional (aditivo, como `EvidenceServiceOptions`). Una variante por lotes (`getReportsCredibility(reportIds)`) sirve a HU-01/T7 con una sola llamada por página.
+- **Residuo de privacidad aceptado:** con un único valorador, `validation_trust_sum` es su `trust_level`, aunque no se revela quién es. La puntuación ya lo dejaría deducir, así que no hay forma de evitarlo sin alterar el resultado.
+
+#### Opción B — Persistir el resultado en `report_credibility`
+
+Una tabla `report_credibility (report_id PK, score, level, sufficient_data, factors, updated_at)` legible por todos. El problema es **quién la escribe**:
+
+- Si TypeScript calcula y escribe con el cliente del usuario, `authenticated` necesita permiso de escritura y cualquiera podría falsificar su puntuación.
+- Si escribe con `service_role`, se rompe la decisión de la PR #13.
+- La única vía segura es una función `SECURITY DEFINER` que reciba solo `report_id` y recalcule **en SQL**, lo que contradice el contrato («TypeScript, no SQL») y duplica la fórmula.
+
+Además, el valor quedaría obsoleto cuando cambie algo que no dispara el recálculo: un `trust_level`, una desactivación, una moderación o una valoración insertada por un operador. Mantenerlo al día exigiría _triggers_ sobre `profiles`, `report_evidences` y `report_assessments`.
+
+#### Decisión
+
+**Opción A.** Es idempotente por construcción (no hay estado propio que se desincronice), no abre ninguna vía de escritura ni de falsificación, no necesita `service_role`, mantiene la fórmula en TypeScript con pruebas unitarias y refleja siempre los cambios de confianza, estado de cuenta y moderación. El coste es calcular en cada lectura: una consulta agregada por página de resultados, apoyada en los índices existentes (`report_evidences_report_sha256_key`, cuya primera columna es `report_id`, y `report_assessments_report_id_idx`). Si algún día hiciera falta, la opción B se puede añadir como caché derivada sin cambiar el contrato.
+
+### Casos de ejemplo (batería TDD de HU-09/T2)
+
+`t` es el `trust_level` del valorador; `A` el número de valoradores que cuentan. Salvo indicación, ninguno es el autor y todos están activos.
+
+| #   | Entradas                                                      | P   | N    | A   | Score | `sufficientData` | Level  |
+| --- | ------------------------------------------------------------- | --- | ---- | --- | ----- | ---------------- | ------ |
+| 1   | Sin evidencias ni valoraciones                                | 0   | 0    | 0   | 50    | no               | medium |
+| 2   | 2 evidencias visibles                                         | 0,5 | 0    | 0   | 60    | no               | medium |
+| 3   | 4 evidencias visibles                                         | 1   | 0    | 0   | 67    | no               | medium |
+| 4   | 10 evidencias visibles (dos colaboradores, 5 cada uno): tope  | 1   | 0    | 0   | 67    | no               | medium |
+| 5   | 4 evidencias, 2 de ellas ocultas                              | 0,5 | 0    | 0   | 60    | no               | medium |
+| 6   | 1 validación, t=100                                           | 1   | 0    | 1   | 67    | no               | medium |
+| 7   | 1 invalidación, t=100                                         | 0   | 1    | 1   | 33    | no               | medium |
+| 8   | 1 validación t=100 + 4 evidencias (un valorador no basta)     | 2   | 0    | 1   | 75    | no               | medium |
+| 9   | 2 validaciones, t=100                                         | 2   | 0    | 2   | 75    | sí               | high   |
+| 10  | 2 invalidaciones, t=100                                       | 0   | 2    | 2   | 25    | sí               | low    |
+| 11  | 2 validaciones, t=1 (masa insuficiente)                       | 0,5 | 0    | 2   | 60    | no               | medium |
+| 12  | 4 validaciones, t=1                                           | 1   | 0    | 4   | 67    | sí               | medium |
+| 13  | 8 validaciones, t=1                                           | 2   | 0    | 8   | 75    | sí               | high   |
+| 14  | 2 validaciones t=1 + 2 evidencias                             | 1   | 0    | 2   | 67    | sí               | medium |
+| 15  | 1 validación t=100 + 1 invalidación t=1                       | 1   | 0,25 | 2   | 62    | sí               | medium |
+| 16  | 2 validaciones t=100 + 2 invalidaciones t=100                 | 2   | 2    | 4   | 50    | sí               | medium |
+| 17  | 3 validaciones t=100 + 4 evidencias                           | 4   | 0    | 3   | 83    | sí               | high   |
+| 18  | 2 validaciones t=34 + 1 invalidación t=67                     | 1   | 0,75 | 3   | 53    | sí               | medium |
+| 19  | 1 validación t=34 + 3 invalidaciones t=67                     | 0,5 | 2,25 | 4   | 32    | sí               | low    |
+| 20  | El autor valida su reporte (t=100) + 1 validación ajena t=100 | 1   | 0    | 1   | 67    | no               | medium |
+| 21  | X valida y después invalida (t=100) + Y invalida (t=100)      | 0   | 2    | 2   | 25    | sí               | low    |
+| 22  | 2 validaciones t=100, una de un perfil inactivo               | 1   | 0    | 1   | 67    | no               | medium |
+| 23  | Caso 11 tras subir la confianza de ambos valoradores a 100    | 2   | 0    | 2   | 75    | sí               | high   |
+
+Propiedades que también deben probarse:
+
+- **Idempotencia:** el mismo estado da siempre el mismo resultado, con cualquier `context` y llamando varias veces seguidas.
+- **Monotonía:** añadir una validación o evidencia no baja la puntuación; añadir una invalidación no la sube.
+- **Límites:** el score está siempre entre 0 y 100; solo evidencias nunca dan `high`; un único valorador nunca da `high` ni `low`.
+- **`factors`:** en el caso 21, `validations = 0`, `invalidations = 2`, `assessors = 2`; en el caso 4, `visibleEvidences = 10` (antes del tope).
+- **`updatedAt`:** la fecha más reciente de las entradas que cuentan; en el caso 1, `reports.created_at`; en el caso 20, la valoración del autor no la mueve.
+- **Defensa:** agregados incoherentes (por ejemplo, una suma de confianza fuera de `[n, 100·n]` o recuentos negativos) se rechazan como error, no se corrigen en silencio.
+
+### Extensiones
+
+Cualquier señal futura (IA, informes de moderación, etc.) entra como un término acotado más en `P` o en `N`, con un tope que impida alcanzar `sufficientData` por sí sola, de modo que la credibilidad pueda apoyarse en ella sin depender de ella. Los pesos y umbrales son constantes con nombre en `credibility.ts`; cambiarlos exige actualizar esta tabla de casos.
+
+### Pendiente de HU-08 (Mario Polaino)
+
+Para integrar las valoraciones hace falta acordar con HU-08:
+
+1. **Cardinalidad:** `UNIQUE (report_id, assessor_id)` o historial. El algoritmo funciona con ambos («solo la última por valorador»); si se guarda historial, conviene un índice `(report_id, assessor_id, created_at desc)`.
+2. **Retirada:** si se permite, cómo se representa (borrado, `withdrawn_at`, etc.) para que la función interna la excluya.
+3. **Reportes propios:** rechazarlos al registrar; el algoritmo ya los ignora.
+4. **Umbral de confianza para valorar** (con HU-10) y confirmar que retirar `assessments.submit` no anula las valoraciones ya emitidas, porque el cálculo no vuelve a comprobar permisos.
+5. **Estados del reporte** que impidan valorar (HU-05).
+6. **Invocación:** después de registrar una valoración, llamar a `recalculateReportCredibility(reportId, { cause: 'validation_added', triggerId: assessmentId })` dentro de un `try/catch` que registre el fallo sin cambiar la respuesta, como en la confirmación de evidencias.
+7. **Lectura de la tabla cerrada:** acordar que `credibility_internal.report_inputs` lea `report_assessments` para devolver solo agregados. La tabla sigue cerrada a los roles de la API, pero sería la primera función con acceso de lectura; las pruebas pgTAP de HU-09/T2 deben comprobar que no expone filas ni identidades.
+
+Fuera de HU-08 quedan la llamada con `evidence_added` (HU-06/T5), con `evidence_moderated` cuando exista la operación de moderación y la presentación en el listado (HU-01/T7).
