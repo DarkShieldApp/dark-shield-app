@@ -73,8 +73,8 @@ límites de descripción y borrador normalizado. No prueban persistencia; HU-05 
 no tiene endpoint ni modelo. Para comprobar la interfaz, ejecutar `npm run dev:web`,
 abrir `http://localhost:3000` y usar **Crear reporte**. Un borrador válido indica
 que sigue en esta sesión; no crea un registro. En **Evidencias**, seleccionar
-imágenes y PDF permite verlos localmente y abrir el archivo; al recargar se
-descartan porque no se suben. **Consultar reportes** indica que la API sigue
+imágenes PNG, JPEG o WebP permite verlas localmente; al recargar se descartan
+porque no se suben. El PDF ya no se admite y se descarta al validarlo. **Consultar reportes** indica que la API sigue
 pendiente, sin inventar resultados. HU-01/T9 describe el contrato previsto en
 [domain-design.md](domain-design.md#hu-01t4-y-hu-01t9--interfaz-y-mecanismo-de-consulta).
 
