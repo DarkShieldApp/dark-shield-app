@@ -1,19 +1,14 @@
 ﻿'use client';
 
 import { useState, type FormEvent } from 'react';
+import { REPORT_CATEGORY_OPTIONS } from '../lib/reports/categories';
 import {
   validateReportField,
   validateReportForm,
-  type ReportCategory,
   type ReportFieldName,
   type ReportFormInput,
   type ReportValidationErrors,
 } from '../lib/reports/validation';
-
-interface CategoryOption {
-  readonly value: ReportCategory;
-  readonly label: string;
-}
 
 interface ApiReportResponse {
   report?: {
@@ -27,27 +22,7 @@ interface ApiReportResponse {
   };
 }
 
-const DARK_PATTERN_CATEGORIES: readonly CategoryOption[] = [
-  {
-    value: 'roach_motel',
-    label: 'Suscripción difícil de cancelar (Roach Motel)',
-  },
-  {
-    value: 'hidden_costs',
-    label: 'Costes ocultos o cargos sorpresa (Hidden Costs)',
-  },
-  { value: 'false_urgency', label: 'Urgencia o escasez falsa (False Urgency)' },
-  {
-    value: 'sneaking',
-    label: 'Preselección o elementos añadidos sin permiso (Sneaking)',
-  },
-  { value: 'confirmshaming', label: 'Manipulación emocional (Confirmshaming)' },
-  {
-    value: 'trick_questions',
-    label: 'Interfaz o redacción confusa (Trick Questions)',
-  },
-  { value: 'other', label: 'Otro patrón oscuro' },
-];
+const DARK_PATTERN_CATEGORIES = REPORT_CATEGORY_OPTIONS;
 
 const INITIAL_VALUES: ReportFormInput = {
   targetUrl: '',
