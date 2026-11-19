@@ -42,6 +42,9 @@ export interface EvidenceCandidate {
   head: Uint8Array;
 }
 
+/** Lo que el cliente declara antes de subir: sin contenido. */
+export type EvidenceDeclaration = Omit<EvidenceCandidate, 'head'>;
+
 export interface AcceptedEvidence {
   name: string;
   kind: EvidenceKind;
@@ -154,14 +157,24 @@ function matchesSignature(head: Uint8Array, rule: EvidenceTypeRule): boolean {
   );
 }
 
-function reject(code: EvidenceErrorCode): EvidenceFileResult {
+function reject(code: EvidenceErrorCode): {
+  ok: false;
+  code: EvidenceErrorCode;
+} {
   return { ok: false, code };
 }
 
-export function validateEvidenceFile(
-  candidate: EvidenceCandidate,
-): EvidenceFileResult {
-  const { name, size, head } = candidate;
+/** Extensión con la que se guarda cada tipo en Storage (JPEG siempre `.jpg`). */
+export const EVIDENCE_STORAGE_EXTENSIONS: Readonly<
+  Record<EvidenceKind, string>
+> = { png: 'png', jpeg: 'jpg', webp: 'webp' };
+
+type DeclarationResult =
+  | { ok: true; evidence: AcceptedEvidence; rule: EvidenceTypeRule }
+  | { ok: false; code: EvidenceErrorCode };
+
+function checkDeclaration(declaration: EvidenceDeclaration): DeclarationResult {
+  const { name, size } = declaration;
 
   if (!isValidName(name)) return reject('EVIDENCE_NAME_INVALID');
 
@@ -175,7 +188,7 @@ export function validateEvidenceFile(
   const byExtension = EVIDENCE_TYPE_RULES.find((rule) =>
     rule.extensions.includes(extension),
   );
-  const mimeType = candidate.type.trim().toLowerCase();
+  const mimeType = declaration.type.trim().toLowerCase();
   const byMime = EVIDENCE_TYPE_RULES.find((rule) => rule.mimeType === mimeType);
   const disguised = suffixes.some((suffix) =>
     DISGUISING_EXTENSIONS.has(suffix),
@@ -185,14 +198,36 @@ export function validateEvidenceFile(
     return reject('EVIDENCE_TYPE_NOT_ALLOWED');
   }
 
-  if (byExtension !== byMime || !matchesSignature(head, byExtension)) {
-    return reject('EVIDENCE_CONTENT_MISMATCH');
-  }
+  if (byExtension !== byMime) return reject('EVIDENCE_CONTENT_MISMATCH');
 
   return {
     ok: true,
     evidence: { name, kind: byExtension.kind, mimeType, extension, size },
+    rule: byExtension,
   };
+}
+
+/**
+ * Comprueba nombre, tamaño, tipo y coherencia de lo declarado, sin la firma.
+ * Sirve para anticipar el rechazo antes de subir (HU-06/T4, paso 1); la
+ * evidencia solo se acepta tras `validateEvidenceFile` con los bytes reales.
+ */
+export function validateEvidenceDeclaration(
+  declaration: EvidenceDeclaration,
+): EvidenceFileResult {
+  const result = checkDeclaration(declaration);
+  return result.ok ? { ok: true, evidence: result.evidence } : result;
+}
+
+export function validateEvidenceFile(
+  candidate: EvidenceCandidate,
+): EvidenceFileResult {
+  const result = checkDeclaration(candidate);
+  if (!result.ok) return result;
+  if (!matchesSignature(candidate.head, result.rule)) {
+    return reject('EVIDENCE_CONTENT_MISMATCH');
+  }
+  return { ok: true, evidence: result.evidence };
 }
 
 export function validateEvidenceBatch(

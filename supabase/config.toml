@@ -44,7 +44,10 @@ port = 54324
 enabled = false
 
 [storage]
-enabled = false
+# HU-06/T4: evidences live in the private report-evidences bucket (created by a
+# migration); the local stack needs Storage to run its pgTAP tests and the API.
+enabled = true
+file_size_limit = "10MiB"
 
 [edge_runtime]
 enabled = false

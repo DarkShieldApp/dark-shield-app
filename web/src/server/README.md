@@ -21,5 +21,14 @@ La factoría de servidor recibe opcionalmente un Bearer. `session.ts` verifica s
 con `getUser(token)`. Reportes y autorización comparten esa comprobación. Las rutas
 de permisos delegan en `authorization.ts`, que valida la entrada, comprueba el permiso
 base y llama a PostgreSQL con el mismo cliente. Las RPC administrativas vuelven a
-comprobar al actor. Véanse los [contratos HTTP](../../../docs/api/authorization.md)
-y la [guía de desarrollo](../../../docs/development.md#clientes-supabase).
+comprobar al actor. Véase el [contrato de autorización](../../../docs/api/authorization.md).
+
+`reports.ts` crea y consulta reportes. Reexporta la factoría Bearer y conserva los cursores que utiliza HU-06. Véase el [contrato de reportes](../../../docs/api/reports.md).
+
+`evidences.ts` implementa la API de evidencias de HU-06/T4 (subida directa en dos
+pasos, confirmación y lectura) con el token Bearer del usuario y la RLS como
+autoridad. Si falla la confirmación, el servidor intenta retirar los objetos escritos como compensación. El módulo `evidence-images.ts` recodifica las imágenes con `sharp` para eliminar
+metadatos. Contrato en [docs/api/evidences.md](../../../docs/api/evidences.md).
+
+Todavía no hay sesiones con cookies en Next.js. Uso y límites de
+la factoría en [la guía de desarrollo](../../../docs/development.md#clientes-supabase).

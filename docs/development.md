@@ -70,8 +70,8 @@ En `/reports/new`, el formulario valida los campos y envía JSON a `POST /api/re
 El formulario todavía carece de sesión Bearer y el modelo SQL mantiene cerrada
 la inserción desde la API. El backend también implementa la consulta pública
 por página o dominio. El componente de selección valida imágenes PNG, JPEG y
-WebP antes de subirlas. El flujo de Storage y la conexión del buscador visual
-quedan pendientes. Véanse el [dominio](domain-design.md) y la [API de reportes](api/reports.md).
+WebP antes de subirlas. HU-06/T4 implementa la subida firmada, la confirmación y la consulta en el servidor.
+En el panel de evidencias, `?reporte=<uuid>` identifica el destino. El cliente muestra el estado de cada imagen y permite reintentar fallos temporales. Para subir necesita la sesión de HU-11. La conexión del buscador visual sigue pendiente. Véanse el [dominio](domain-design.md) y la [API de reportes](api/reports.md).
 
 ### Pruebas y cobertura
 
@@ -99,9 +99,14 @@ declaraciones `.d.ts` dentro de ese ámbito. Actualmente son:
 - `src/lib/supabase/client.ts`: factoría del navegador.
 - `src/lib/evidences/rules.ts`: reglas de aceptación de evidencias (HU-06/T6).
 - `src/lib/evidences/selection.ts`: selección y validación de evidencias en el cliente (HU-06/T3).
+- `src/lib/evidences/upload.ts`: subida de evidencias en dos pasos desde el cliente (HU-06/T3).
+- `src/lib/supabase/session.ts`: token de la sesión del cliente de Supabase para la API.
 - `src/lib/reports/rules.ts`: validación del borrador de creación (HU-05/T5).
 - `src/lib/reports/validation.ts`, `src/lib/reports/query.ts` y `src/server/reports.ts`: contratos, validación, creación y búsqueda de reportes.
 - `src/server/supabase.ts`, `session.ts` y `authorization.ts`: cliente por petición, verificación Bearer y operaciones de permisos.
+- `src/server/evidences.ts`: endpoints de evidencias, autorización y compensación (HU-06/T4).
+- `src/server/evidence-images.ts`: recodificación de evidencias con `sharp` para eliminar metadatos (HU-06/T4).
+- Las rutas de evidencias bajo `src/app/api/reports/[reportId]/evidences/` se prueban desde Vitest. Su lógica de servidor entra en el ámbito de V8.
 - `scripts/lib/auth-health.ts`: petición y clasificación del diagnóstico.
 
 `src/server/profiles.ts` contiene únicamente los tipos `Profile`, `Role` y `RoleCode`; no tiene lógica
@@ -216,6 +221,22 @@ respondieron `401 UNAUTHENTICATED` por HTTP ante la ausencia de Bearer.
 - `db lint --schema public,private,authorization_internal --fail-on warning` y `db advisors --type security --fail-on error` devolvieron listas vacías. `npm run supabase:stop` detuvo el proyecto conservando los volúmenes.
 
 El [informe de T-CTRL-02](qa/reporte-pruebas-metricas.md) conserva la medición de su semana y commit.
+
+### Verificación conjunta de HU-14/T3 y HU-06 (19 de noviembre de 2026)
+
+La rama T3 partía de `269b384`. La validación conjunta usa `main` en `8c8c6c4`:
+incluye el servidor y Storage de #23 (`159dad9`) y el cliente de subida de #25.
+
+| Comprobación local   | Resultado del árbol integrado                                                                                                                                                                                                                                                                                 |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Dependencias y build | `npm ci` instaló el lockfile de #23, que #25 conserva. npm informó de siete avisos moderados. `npm run check` pasó formato, ESLint, tipos y compilación de web y extensión. Un primer build de Turbopack falló al crear una junction dentro del sandbox de Windows. El check completo pasó fuera del sandbox. |
+| Vitest y V8          | `npm test` y `npm run test:coverage`: 333 pruebas en 13 archivos. Sentencias 721/727 (99,17 %), ramas 545/564 (96,63 %), funciones 115/117 (98,29 %) y líneas 675/680 (99,26 %). Todos los archivos ejecutables superaron el umbral por archivo.                                                              |
+| Migraciones          | Un proyecto local independiente con Storage habilitado aplicó las ocho migraciones en PostgreSQL 17 desde una base nueva. `migration list` confirmó la secuencia completa y `migration up` devolvió cero pendientes.                                                                                          |
+| pgTAP                | `npm run test:db`: 782 aserciones correctas en 19 suites. Cubren las políticas del bucket, las RPC y la auditoría RBAC, y las reconstrucciones históricas de perfiles, reportes y roles.                                                                                                                      |
+| Lint y seguridad SQL | `db lint --schema public,private,authorization_internal --fail-on warning` y `db advisors --type security --fail-on error` devolvieron cero hallazgos en la instancia local.                                                                                                                                  |
+
+La aplicación de `evidences.add` a las rutas y políticas de HU-06 sigue pendiente.
+Estas pruebas corresponden al árbol local de integración.
 
 ### Dependencias de herramientas
 

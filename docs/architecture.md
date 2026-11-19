@@ -44,7 +44,7 @@ Cuando ambos clientes necesiten reutilizar un contrato, se podrá incorporar `pa
 ## Límites de integración y seguridad
 
 - El servidor concentrará las operaciones de negocio que requieran autorización, cálculo de confianza/credibilidad, moderación, control de abuso o coordinación con la IA.
-- Supabase Auth está adoptado. HU-11 resolverá sesiones en web y extensión, cookies SSR, verificación de identidad y renovación. Los handlers protegidos verifican Bearer con Auth. Siguen pendientes el proxy SSR, CORS para la extensión y el flujo de Storage.
+- Supabase Auth está adoptado. HU-11 resolverá sesiones en web y extensión, cookies SSR, verificación de identidad y renovación. Los handlers protegidos verifican Bearer con Auth. HU-06 implementa la subida firmada, confirmación y consulta de evidencias en Storage. Siguen pendientes el proxy SSR y CORS para la extensión.
 - `auth.users` conserva la identidad y `public.profiles` sus datos de dominio con el mismo UUID. Un trigger privado crea el perfil sin copiar metadatos; la FK `ON DELETE RESTRICT` impide el borrado accidental en cascada. La lectura directa de perfiles se limita al propio activo. La RPC administrativa ofrece una proyección mínima paginada. `is_active` no revoca sesiones ni protege por sí solo futuras tablas o endpoints: deberán comprobarlo según sus requisitos.
 - No se colocarán claves privilegiadas de Supabase ni secretos de IA en el navegador, la extensión o variables expuestas al cliente. Las comprobaciones de permisos se harán en el servidor y, donde proceda, también en la base de datos.
 - La extensión no tiene actualmente `host_permissions` ni `content_scripts` en su versión de producción. Consultar la pestaña mediante una acción del usuario y observar la navegación en segundo plano presentan requisitos de permisos distintos; no se habilitará acceso global sin una necesidad justificada.
@@ -70,6 +70,6 @@ Son decisiones de arranque revisables; no implican que las HU correspondientes e
 
 ## Trabajo todavía no definido o implementado
 
-La [API de autorización](api/authorization.md) entrega permisos base actuales y cambios auditados. La integración con las reglas de reportes, evidencias y valoraciones corresponde a sus HU. Quedan pendientes sesiones, confianza y credibilidad, subida a Storage, IA y permisos de navegador.
+La [API de autorización](api/authorization.md) entrega permisos base actuales y cambios auditados. La integración con las reglas de reportes, evidencias y valoraciones corresponde a sus HU. Quedan pendientes sesiones, confianza y credibilidad, IA y permisos de navegador.
 
 El [diseño del dominio](domain-design.md) recoge expresamente lo que falta por definir; el [documento de desarrollo](development.md) conserva la organización del Sprint 1, los criterios de trabajo y las discrepancias entre fuentes. El [README](../README.md) contiene los comandos de instalación y arranque.

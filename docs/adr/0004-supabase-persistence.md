@@ -9,7 +9,7 @@ El ConOps requiere conservar usuarios, reportes, evidencias, validaciones y otro
 
 ## Decisión
 
-Usar **Supabase / PostgreSQL** para la persistencia y reservar `supabase/migrations/` para cambios SQL versionados. **Supabase Auth** es el sistema elegido para HU-11; sus flujos todavía no están implementados. El contrato de HU-06 prevé un bucket privado en **Supabase Storage**.
+Usar **Supabase / PostgreSQL** para la persistencia y reservar `supabase/migrations/` para cambios SQL versionados. **Supabase Auth** es el sistema elegido para HU-11; sus flujos todavía no están implementados. HU-06/T4 almacena evidencias en un bucket privado en **Supabase Storage**.
 
 La lógica de negocio se centralizará en el servidor web. Al crear tablas expuestas se deberán diseñar las políticas RLS correspondientes, además de autorizar operaciones en los puntos adecuados. Las credenciales con privilegios y los secretos no estarán accesibles desde la extensión o el frontend.
 
@@ -60,7 +60,7 @@ frontera de confianza para migraciones y bootstrap. Véase la [guía operativa](
 ## Consecuencias y asuntos abiertos
 
 - El perfil tiene su esquema, migración y política inicial. Acordar las restantes entidades, relaciones y políticas al desarrollar sus HU.
-- Implementar las sesiones y el flujo de Storage según el contrato HU-06 ya acordado.
+- Completar las sesiones de HU-11 e integrar el permiso base de aportación de evidencias con HU-06.
 - Las claves publicables **no** sustituyen RLS; las claves secretas o de `service_role` tienen privilegios especiales y deben permanecer bajo control del servidor.
 - El plan Free puede facilitar el arranque, pero sus límites de capacidad, transferencia, almacenamiento o inactividad deberán revisarse antes de dimensionar. El proyecto remoto se crea manualmente y su configuración pública se mantiene en `web/.env`, fuera de Git; esta preparación no modifica su esquema.
 - La confianza y credibilidad son reglas propias de DarkShield; PostgreSQL no las calcula automáticamente.

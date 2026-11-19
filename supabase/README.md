@@ -22,7 +22,9 @@ las aplica al proyecto remoto compartido; su estado debe comprobarse antes del d
 ## Instancia local y migraciones
 
 Supabase CLI 3.1.0 es una dependencia fijada en el lockfile. La configuración
-local usa PostgreSQL 17, API, Auth, Studio y correo local. Storage, Realtime,
+local usa PostgreSQL 17, API, Auth, Studio, correo local y Storage (HU-06/T4:
+_bucket_ privado `report-evidences`, creado por migración, y sus políticas de
+`storage.objects`, que prueba `report_evidences_storage.test.sql`). Realtime,
 Edge Functions y Analytics están desactivados, al igual que el registro público.
 No hay archivos seed; T2 siembra los roles y T3 los seis permisos y sus doce asignaciones iniciales. La CLI v3 usa el entorno local por defecto; los comandos de esta
 sección no llevan `--remote` y no necesitan login ni enlazar el proyecto remoto.
@@ -114,8 +116,8 @@ escrituras públicas, ni de tabla ni de columna. Leer roles no concede capacidad
 
 ## Autorización administrativa (HU-14/T3)
 
-La [migración T3](migrations/20261119104009_role_permissions.sql) se aplica después de
-las seis anteriores. La PK compuesta de `role_permissions` cubre la búsqueda por rol y
+La [migración T3](migrations/20261119104009_role_permissions.sql) ocupa el séptimo lugar de las ocho migraciones.
+La octava, [bucket de evidencias](migrations/20261119120000_create_report_evidences_bucket.sql), crea el bucket privado y sus tres políticas de Storage. La PK compuesta de `role_permissions` cubre la búsqueda por rol y
 evita duplicados. Las FK restringen cambios en los catálogos. Son seis códigos y un máximo
 de doce asignaciones iniciales, por lo que el índice de la PK basta para estas consultas.
 

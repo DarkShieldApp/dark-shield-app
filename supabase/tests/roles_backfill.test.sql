@@ -5,6 +5,11 @@ set local search_path = public, extensions;
 select plan(5);
 select ok((select cardinality(statements) > 0 from supabase_migrations.schema_migrations
   where version = '20261111113011'), 'T2 SQL is recorded');
+-- Remove the later HU-06 storage policies (they read profiles, reports and
+-- report_evidences) only within this historical replay.
+drop policy report_evidences_objects_insert_own on storage.objects;
+drop policy report_evidences_objects_select on storage.objects;
+drop policy report_evidences_objects_delete_own_unregistered on storage.objects;
 -- The later HU-06 admin policies read role_code: remove that table only
 -- within this historical replay.
 drop table public.report_evidences;
