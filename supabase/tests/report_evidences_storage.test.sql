@@ -13,18 +13,25 @@ select results_eq(
   'Private bucket with the limits of rules.ts (10 MiB, PNG/JPEG/WebP, no PDF)'
 );
 
-select results_eq(
-  $$select policyname::text, cmd::text, roles::text[]
-    from pg_policies
-    where schemaname = 'storage' and tablename = 'objects'
-      and policyname like 'report_evidences_objects_%'
-    order by policyname$$,
-  $$values
-    ('report_evidences_objects_delete_own_unregistered', 'DELETE', array['authenticated']),
-    ('report_evidences_objects_insert_own', 'INSERT', array['authenticated']),
-    ('report_evidences_objects_select', 'SELECT', array['authenticated'])$$,
-  'Insert, read and delete policies for authenticated only; no update policy'
+select is(
+  (select count(*) from pg_policies
+   where schemaname = 'storage' and tablename = 'objects'
+     and policyname like 'report_evidences_objects_%'),
+  3::bigint, 'Exactly three evidence policies on storage.objects (no update policy)'
 );
+select policy_cmd_is('storage', 'objects', p, c, p || ' covers ' || c)
+from (values
+  ('report_evidences_objects_insert_own', 'insert'),
+  ('report_evidences_objects_select', 'select'),
+  ('report_evidences_objects_delete_own_unregistered', 'delete')
+) as policies(p, c);
+select policy_roles_are('storage', 'objects', p, array['authenticated'],
+  p || ' applies only to authenticated')
+from unnest(array[
+  'report_evidences_objects_insert_own',
+  'report_evidences_objects_select',
+  'report_evidences_objects_delete_own_unregistered'
+]) p;
 
 -- Fixtures, as the owner: u1 uploads, u2 is another collaborator, u3 is inactive.
 insert into auth.users (id) values
