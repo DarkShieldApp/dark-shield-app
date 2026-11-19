@@ -10,6 +10,9 @@ select ok((select cardinality(statements) > 0 from supabase_migrations.schema_mi
 -- Remove the later HU-08 dependency only within this historical replay.
 alter table public.report_assessments
   drop constraint report_assessments_assessor_fkey;
+-- Remove the later HU-06 table (its FKs and policies depend on it) only
+-- within this historical replay.
+drop table public.report_evidences;
 alter table public.reports
   drop constraint reports_author_fkey;
 drop trigger auth_users_create_profile on auth.users;
