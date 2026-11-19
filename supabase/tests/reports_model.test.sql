@@ -153,11 +153,10 @@ select ok(
 
 select ok(
   not has_table_privilege('anon', 'public.reports', 'SELECT')
-  and not has_table_privilege('authenticated', 'public.reports', 'SELECT')
   and not has_table_privilege('authenticated', 'public.reports', 'INSERT')
   and not has_table_privilege('authenticated', 'public.reports', 'UPDATE')
   and not has_table_privilege('authenticated', 'public.reports', 'DELETE'),
-  'Direct report access is restricted'
+  'Direct report writes are restricted (public read: reports_public_read.test.sql)'
 );
 
 select * from finish();
