@@ -1,6 +1,6 @@
 ﻿import 'server-only';
 
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   validateReportForm,
   type ReportCategory,
@@ -13,8 +13,10 @@ import {
   type ReportQueryScope,
   type ReportSummaryItem,
 } from '../lib/reports/query';
-import { getSupabaseConfig } from '../lib/supabase/config';
+import { createAuthenticatedSupabaseClient, verifyBearer } from './session';
 import { createServerSupabaseClient } from './supabase';
+
+export { createAuthenticatedSupabaseClient } from './session';
 
 export interface PersistedReport {
   id: string;
@@ -193,24 +195,6 @@ export function parseAndValidateReportPayload(
   return input;
 }
 
-export function createAuthenticatedSupabaseClient(
-  accessToken: string,
-): SupabaseClient {
-  const { url, publishableKey } = getSupabaseConfig();
-  return createClient(url, publishableKey, {
-    global: {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    },
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false,
-    },
-  });
-}
-
 export async function createReport(
   rawBody: unknown,
   accessToken: string | null,
@@ -229,8 +213,8 @@ export async function createReport(
 
   const client = injectedClient ?? createAuthenticatedSupabaseClient(token);
 
-  const { data: authData, error: authError } = await client.auth.getUser(token);
-  if (authError || !authData.user) {
+  const { userId } = await verifyBearer(client, token);
+  if (!userId) {
     throw new ReportApiError(
       401,
       'INVALID_SESSION',
@@ -241,7 +225,7 @@ export async function createReport(
   const { data: profile, error: profileError } = await client
     .from('profiles')
     .select('id, is_active')
-    .eq('id', authData.user.id)
+    .eq('id', userId)
     .maybeSingle();
 
   if (profileError) {
@@ -266,7 +250,7 @@ export async function createReport(
   const { data: created, error: insertError } = await client
     .from('reports')
     .insert({
-      author_id: authData.user.id,
+      author_id: userId,
       title: input.title,
       description: storedDescription,
       pattern_type: input.category,
