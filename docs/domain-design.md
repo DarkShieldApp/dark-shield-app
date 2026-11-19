@@ -385,7 +385,7 @@ Estas comprobaciones derivan de los criterios de aceptación de HU-08 y servirá
 
 **Requisito relacionado:** HU-06 — Como Usuario Colaborador, quiero aportar evidencias a un reporte para respaldar la información.
 **Origen de esta definición:** HU-06, T6 — Desarrollar pruebas unitarias para el rechazo de archivos no permitidos.
-**Estado:** Reglas implementadas y probadas en `web/src/lib/evidences/rules.ts`. Tipos y límites acordados en la revisión del contrato de HU-06/T4 (PR #13): **solo PNG, JPEG y WebP, sin PDF** (decisión del PO, Iván) y 10 MiB por archivo. Almacenamiento, permisos y endpoints quedan para las restantes tareas de HU-06.
+**Estado:** Reglas implementadas y probadas en `web/src/lib/evidences/rules.ts` (T6); selección y validación en el cliente en `web/src/lib/evidences/selection.ts` (T3, parte 1). Tipos y límites acordados en la revisión del contrato de HU-06/T4 (PR #13): **solo PNG, JPEG y WebP, sin PDF** (decisión del PO, Iván) y 10 MiB por archivo. Almacenamiento, permisos, subida y endpoints quedan para las restantes tareas de HU-06.
 
 ### Módulo compartido
 
@@ -430,6 +430,23 @@ Se devuelve el primer fallo, en este orden:
 | `EVIDENCE_TOO_MANY`         | El envío supera `EVIDENCE_MAX_FILES` (error de envío, `index: null`)     |
 
 Los códigos son estables: T3 y T4 deben reutilizarlos en la interfaz y en la API en lugar de definir otros equivalentes. Cambiar o retirar un código es un cambio de contrato.
+
+### Selección en el cliente (HU-06/T3, parte 1)
+
+`selection.ts` es también un módulo puro (sin React, Next.js ni Supabase) que prepara la selección de archivos antes de cualquier envío. No define reglas propias: clasifica cada archivo con `validateEvidenceFile` y prepara el lote final con `validateEvidenceBatch`.
+
+- `readEvidenceCandidate(file, name?)` convierte un `File` o `Blob` en `EvidenceCandidate` leyendo solo `size`, `type` y `file.slice(0, EVIDENCE_SIGNATURE_BYTES)`; nunca el archivo completo. Un `Blob` sin nombre queda con nombre vacío y se rechaza como `EVIDENCE_NAME_INVALID`.
+- `prepareEvidenceFiles(files)` prepara varios archivos y les asigna una clave de deduplicación (nombre, tamaño, MIME y `lastModified`).
+- `addToEvidenceSelection(selection, prepared)` acumula archivos sobre la selección anterior, que no se modifica. Los ya presentes, aceptados o rechazados, no se repiten y se devuelven en `duplicates` para poder informar.
+- `removeFromEvidenceSelection(selection, key)` quita un archivo y reclasifica el resto.
+- Cada elemento de `selection.items` tiene `status: 'accepted'` con la evidencia normalizada o `status: 'rejected'` con el código de `rules.ts`. Los rechazados se conservan para mostrar el motivo hasta que el usuario los quite.
+- **El límite `EVIDENCE_MAX_FILES` se aplica después de validar.** Solo cuentan los archivos aceptados, en orden de selección: un archivo rechazado no ocupa hueco ni hace perder uno válido. Un archivo válido que supere el máximo se marca con `EVIDENCE_TOO_MANY` y pasa a aceptado si se quita otro. No se recorta la lista antes de validar, porque así podía perderse un archivo válido cuando el primero era rechazado (caso de seis archivos cubierto por las pruebas).
+- `evidenceSubmission(selection)` devuelve los archivos aceptados y el resultado de `validateEvidenceBatch` sobre ellos: lo que enviaría la futura subida y la misma comprobación que repetirá el servidor.
+- `EVIDENCE_ERROR_MESSAGES` es un `Record<EvidenceErrorCode, string>` con mensajes en español. TypeScript obliga a cubrir cada código nuevo, y las cifras y tipos se derivan de `EVIDENCE_MAX_FILE_BYTES`, `EVIDENCE_MAX_FILES` y `ALLOWED_EVIDENCE_TYPES`.
+
+`validateEvidenceBatch` no se usa directamente sobre lo seleccionado porque rechaza el envío completo (`index: null`) cuando hay más de `EVIDENCE_MAX_FILES` archivos y, por tanto, no da un resultado por archivo.
+
+Queda para la parte 2 de T3: la subida directa a Storage y la confirmación, que siguen el flujo en dos pasos del contrato de HU-06/T4 y dependen de sus endpoints. La interfaz de selección de HU-06/T2 (`dashboard.tsx`) debe delegar en este módulo para que su lógica quede dentro de la cobertura medida.
 
 ### Fuera del alcance de T6
 
