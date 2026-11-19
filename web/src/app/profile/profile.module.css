@@ -143,3 +143,31 @@
     gap: 8px;
   }
 }
+
+/* HU-10/T2: Allowed actions section. */
+
+.actionsSection {
+  margin-top: 32px;
+}
+
+.actionsList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.actionItem {
+  padding: 14px 18px;
+  background: #17243a;
+  border: 1px solid #29364d;
+  border-radius: 10px;
+  color: #e2e8f0;
+}
+
+.emptyActions {
+  color: #94a3b8;
+  font-size: 14px;
+}
