@@ -2,9 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('client-only', () => ({}));
 
-import { EVIDENCE_ERROR_MESSAGES } from '../src/lib/evidences/rules';
 import {
   EMPTY_EVIDENCE_SELECTION,
+  EVIDENCE_ERROR_MESSAGES,
   addToEvidenceSelection,
   prepareEvidenceFiles,
   type PreparedEvidenceFile,
