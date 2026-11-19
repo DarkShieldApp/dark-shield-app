@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Profile } from '../src/server/profiles';
+import { SupabaseConfigurationError } from '../src/lib/supabase/config';
 
 vi.mock('server-only', () => ({}));
 
@@ -120,5 +121,67 @@ describe('GET /api/me/profile', () => {
     const response = await GET(createRequest('valid-token'));
 
     expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+  });
+
+  // HU-10/T3: Additional authentication and configuration tests.
+
+  it('rejects malformed authorization headers', async () => {
+    const request = new Request('http://localhost:3000/api/me/profile', {
+      headers: {
+        Authorization: 'Invalid token',
+      },
+    });
+
+    const response = await GET(request);
+
+    expect(response.status).toBe(401);
+    expect((await response.json()).error.code).toBe('UNAUTHENTICATED');
+    expect(verifyBearer).not.toHaveBeenCalled();
+  });
+
+  it('handles authentication service errors', async () => {
+    vi.mocked(verifyBearer).mockResolvedValue({
+      userId: null,
+      error: {
+        status: 503,
+      } as unknown as NonNullable<
+        Awaited<ReturnType<typeof verifyBearer>>['error']
+      >,
+    });
+
+    const response = await GET(createRequest('valid-token'));
+
+    expect(response.status).toBe(500);
+    expect((await response.json()).error.code).toBe('INTERNAL_ERROR');
+    expect(getMyProfile).not.toHaveBeenCalled();
+  });
+
+  it('handles authentication connection errors', async () => {
+    vi.mocked(verifyBearer).mockResolvedValue({
+      userId: null,
+      error: {
+        status: 0,
+      } as unknown as NonNullable<
+        Awaited<ReturnType<typeof verifyBearer>>['error']
+      >,
+    });
+
+    const response = await GET(createRequest('valid-token'));
+
+    expect(response.status).toBe(500);
+    expect((await response.json()).error.code).toBe('INTERNAL_ERROR');
+    expect(getMyProfile).not.toHaveBeenCalled();
+  });
+
+  it('handles missing Supabase configuration', async () => {
+    vi.mocked(createAuthenticatedSupabaseClient).mockImplementation(() => {
+      throw new SupabaseConfigurationError('Supabase configuration missing');
+    });
+
+    const response = await GET(createRequest('valid-token'));
+
+    expect(response.status).toBe(503);
+    expect((await response.json()).error.code).toBe('SERVICE_UNAVAILABLE');
+    expect(verifyBearer).not.toHaveBeenCalled();
   });
 });
