@@ -129,7 +129,7 @@ Consultar [arquitectura](architecture.md), [desarrollo](development.md) y
 
 **Requisito relacionado:** HU-01 — Consultar una página.
 **Origen de esta definición:** HU-01, T1 — Definir el flujo de consulta de una página web; ConOps, secciones 4, 5 y 6.
-**Estado:** Flujo funcional y criterio de búsqueda definidos para HU-01/T1–T2. La implementación corresponde a HU-01/T3 y T4.
+**Estado:** Flujo funcional y criterio de búsqueda definidos para HU-01/T1–T2. La consulta del servidor está implementada (HU-01/T3, T5); la interfaz corresponde a HU-01/T4 y T6.
 
 ### Propósito y alcance
 
@@ -255,13 +255,20 @@ lista vacía. Los datos de la respuesta se renderizan como reportes comunicados,
 sin inferir credibilidad cuando el campo no esté disponible.
 
 **Estado de implementación:** HU-01/T4 aporta la estructura visual del buscador,
-la navegación y los estados iniciales. El handler GET ya implementa búsqueda, selección de ámbito y paginación contra el modelo de HU-05. La conexión de la pantalla de consulta con ese handler sigue pendiente.
+la navegación y los estados iniciales. HU-01/T5 implementó el handler `GET /api/reports` con búsqueda, selección de ámbito, paginación y gestión de vacío y errores. HU-01/T3 cierra el contrato en el servidor:
+
+- Dominio registrable con la Public Suffix List mantenida (`tldts`, incluida la sección privada), compartido por la normalización al crear (HU-05) y por la consulta, de modo que la clave es idéntica en ambos lados.
+- Modo dominio interpretado con el parser WHATWG también para dominios sin esquema (IDN a _punycode_), sin expresiones regulares propias.
+- Proyección pública sin query ni fragmento: el campo `target_url` de la respuesta es `page_key` y `anon` deja de leer la columna `target_url`.
+- Cursor validado (fecha ISO 8601 y UUID) antes de usarlo en el filtro.
+
+El contrato HTTP completo está en [`docs/api/reports.md`](api/reports.md#6-get-apireports--consulta-por-página-o-dominio). La conexión de la pantalla de consulta con el handler sigue pendiente (HU-01/T4 y T6); la credibilidad corresponde a HU-01/T7 y HU-09, y la limitación de uso a HU-23.
 
 #### Integración y decisiones de implementación
 
 - HU-05 debe hacer consultable la página afectada por cada reporte con la clave definida aquí; la forma de persistir y derivar esa clave se resuelve al diseñar el modelo de reportes.
 - El servidor implementa validación, búsqueda, paginación y proyección. Conectar el buscador de HU-01/T4 con ese contrato sigue pendiente. La extensión lo consumirá al abordar HU-17.
-- El uso de la Public Suffix List requiere una implementación mantenida y una política para actualizar sus datos; no se debe asumir que los dos últimos componentes separados por puntos identifican siempre el dominio registrable.
+- El uso de la Public Suffix List requiere una implementación mantenida y una política para actualizar sus datos; no se debe asumir que los dos últimos componentes separados por puntos identifican siempre el dominio registrable. Se usa `tldts` con versión exacta; la política de actualización y la limitación de los reportes anteriores a HU-01/T3 están en [`docs/api/reports.md`](api/reports.md#public-suffix-list-implementación-y-actualización).
 - Los límites de página ayudan a acotar respuestas, pero no sustituyen los controles contra extracción masiva previstos por el ConOps.
 
 #### Acceso de lectura en la base de datos
@@ -269,11 +276,11 @@ la navegación y los estados iniciales. El handler GET ya implementa búsqueda, 
 La migración `20261119100000_reports_public_read.sql` abre la lectura de `public.reports`, acordada en la revisión del contrato de evidencias (PR #13, respuesta 2), porque HU01-FL-07 establece que consultar información pública no requiere permisos de colaborador:
 
 - Política `reports_select_public` para `anon` y `authenticated`, sin condiciones: todavía no hay estados de reporte. Cuando la moderación los añada, la política deberá filtrar por ellos.
-- `anon` lee la proyección pública (`id`, `title`, `description`, `pattern_type`, `target_url`, `page_key`, `target_host`, `registrable_domain`, `created_at`), que es la que usa `GET /api/reports` con el cliente sin sesión; **no lee `author_id`**.
+- `anon` lee la proyección pública (`id`, `title`, `description`, `pattern_type`, `page_key`, `target_host`, `registrable_domain`, `created_at`), que es la que usa `GET /api/reports` con el cliente sin sesión; **no lee `author_id` ni `target_url`**.
 - `authenticated` lee todas las columnas, incluido `author_id` (por ejemplo, para que HU-08 impida valorar el propio reporte). Las políticas de evidencias necesitan que pueda leer los reportes.
 - La escritura sigue revocada: crear, modificar o borrar reportes corresponde a HU-05.
 
-Queda abierto, como se indicó en la revisión de HU-01/T2, que `target_url` puede conservar la _query_ de la URL reportada; la proyección pública debería excluirla o HU-05 eliminarla al guardar.
+`target_url` puede conservar la _query_ de la URL reportada (identificadores de seguimiento o sesión). HU-01/T3 lo resuelve en la proyección pública: `GET /api/reports` no lee la columna y devuelve como `target_url` el valor de `page_key`, y la migración `20261119130000_reports_hide_target_url_from_anon.sql` revoca a `anon` la lectura de `target_url`. Los datos guardados no cambian; decidir si HU-05 debe dejar de guardar la _query_ queda para esa historia.
 
 ## Validación e invalidación de reportes
 
