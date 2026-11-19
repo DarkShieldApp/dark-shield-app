@@ -21,6 +21,11 @@ where id = 'a1111111-1111-4111-8111-111111111111';
 -- Remove the later HU-08 dependency only within this historical replay.
 alter table public.report_assessments
   drop constraint report_assessments_report_fkey;
+-- Remove the later HU-06 storage policies (they read profiles, reports and
+-- report_evidences) only within this historical replay.
+drop policy report_evidences_objects_insert_own on storage.objects;
+drop policy report_evidences_objects_select on storage.objects;
+drop policy report_evidences_objects_delete_own_unregistered on storage.objects;
 -- Remove the later HU-06 table (its FKs and policies depend on it) only
 -- within this historical replay.
 drop table public.report_evidences;

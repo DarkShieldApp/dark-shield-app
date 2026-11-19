@@ -454,7 +454,7 @@ Comprobar la firma no garantiza que el archivo sea inocuo. Quedan pendientes, pa
 
 ### Contrato de persistencia y API (HU-06/T4)
 
-**Estado:** acordado en la revisión de la PR #13 (19 de noviembre de 2026): preguntas 1–4 con Gregorio (HU-05/T4), 5–7 con Ildefonso (HU-06/T1 y HU-11) y 8–11 con Iván (HU-09/T2 y PO). Solo queda pendiente cómo eliminar los metadatos con la subida directa (ver más abajo). Se implementa en tres piezas: el modelo y su RLS (HU-06/T4a), la lectura pública de reportes (respuesta 2, en una PR aparte porque toca HU-05/T4) y el endpoint con el _bucket_ y sus políticas (HU-06/T4).
+**Estado:** acordado en la revisión de la PR #13 (19 de noviembre de 2026): preguntas 1–4 con Gregorio (HU-05/T4), 5–7 con Ildefonso (HU-06/T1 y HU-11) y 8–11 con Iván (HU-09/T2 y PO). La eliminación de metadatos con la subida directa se cerró después: el servidor recodifica la imagen con `sharp` al confirmar (ver más abajo). Implementado en tres piezas: el modelo y su RLS (HU-06/T4a), la lectura pública de reportes (respuesta 2, aparte porque toca HU-05/T4) y el endpoint con el _bucket_ y sus políticas (HU-06/T4), especificado en [docs/api/evidences.md](api/evidences.md).
 
 #### Decisiones
 
@@ -515,17 +515,18 @@ Sesión obligatoria (401) y reporte legible (404). Devuelve `200` con `{ "items"
 
 Mismo formato que el resto de la API: `{ "error": { "code", "message", "details"? } }`.
 
-| Estado | `error.code`                                             | Cuándo                                                                                                                                            |
-| ------ | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `400`  | `INVALID_REQUEST`                                        | JSON mal formado, campos ausentes o de otro tipo, `uploadId` que no es un UUID, `limit` o `cursor` no válidos.                                    |
-| `400`  | `EVIDENCE_REJECTED`                                      | Algún archivo no supera `rules.ts`. `details` es la lista `{ index, code }` de `validateEvidenceBatch`; `EVIDENCE_TOO_MANY` va con `index: null`. |
-| `400`  | `EVIDENCE_UPLOAD_MISSING`                                | Se confirma una subida que no existe.                                                                                                             |
-| `401`  | `UNAUTHENTICATED`                                        | Token ausente, caducado o inválido; siempre con el mensaje «Sesión no válida o caducada.».                                                        |
-| `403`  | `FORBIDDEN_INACTIVE_PROFILE`                             | Perfil inexistente o inactivo (mismo código que `POST /api/reports`).                                                                             |
-| `404`  | `REPORT_NOT_FOUND`                                       | `reportId` mal formado, inexistente o no legible: no se distingue «no existe» de «no es visible».                                                 |
-| `409`  | `EVIDENCE_DUPLICATE`                                     | El mismo contenido ya está asociado al reporte.                                                                                                   |
-| `500`  | `EVIDENCE_STORAGE_FAILED`, `EVIDENCE_PERSISTENCE_FAILED` | Fallo de Storage o de la base de datos, tras la compensación.                                                                                     |
-| `503`  | `SERVICE_UNAVAILABLE`                                    | Supabase no está configurado en el servidor (como en `/api/reports`).                                                                             |
+| Estado | `error.code`                                                      | Cuándo                                                                                                                                            |
+| ------ | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `400`  | `INVALID_REQUEST`                                                 | JSON mal formado, campos ausentes o de otro tipo, `uploadId` que no es un UUID, `limit` o `cursor` no válidos.                                    |
+| `400`  | `EVIDENCE_REJECTED`                                               | Algún archivo no supera `rules.ts`. `details` es la lista `{ index, code }` de `validateEvidenceBatch`; `EVIDENCE_TOO_MANY` va con `index: null`. |
+| `400`  | `EVIDENCE_UPLOAD_MISSING`                                         | Se confirma una subida que no existe.                                                                                                             |
+| `401`  | `UNAUTHENTICATED`                                                 | Token ausente, caducado o inválido; siempre con el mensaje «Sesión no válida o caducada.».                                                        |
+| `403`  | `FORBIDDEN_INACTIVE_PROFILE`                                      | Perfil inexistente o inactivo (mismo código que `POST /api/reports`).                                                                             |
+| `404`  | `REPORT_NOT_FOUND`                                                | `reportId` mal formado, inexistente o no legible: no se distingue «no existe» de «no es visible».                                                 |
+| `409`  | `EVIDENCE_DUPLICATE`                                              | El mismo contenido ya está asociado al reporte.                                                                                                   |
+| `500`  | `EVIDENCE_STORAGE_FAILED`, `EVIDENCE_PERSISTENCE_FAILED`          | Fallo de Storage o de la base de datos, tras la compensación.                                                                                     |
+| `500`  | `PROFILE_LOOKUP_FAILED`, `REPORT_LOOKUP_FAILED`, `INTERNAL_ERROR` | No se pudo comprobar el perfil o el reporte, o error no previsto.                                                                                 |
+| `503`  | `SERVICE_UNAVAILABLE`                                             | Supabase no está configurado en el servidor (como en `/api/reports`).                                                                             |
 
 Los códigos de archivo son los de `EVIDENCE_ERROR_CODES`; la interfaz los traduce con `EVIDENCE_ERROR_MESSAGES`. `POST /api/reports` usa todavía `INVALID_SESSION` para el token inválido: conviene alinearlo con este `401` único.
 
@@ -535,9 +536,9 @@ Los códigos de archivo son los de `EVIDENCE_ERROR_CODES`; la interfaz los tradu
 - Si también falla el borrado, se registra la ruta (sin datos personales) para limpiarla después.
 - Las subidas que nunca se confirman quedan en la carpeta del usuario sin fila asociada. El cliente las borra si el usuario cancela; una limpieza periódica de objetos sin fila con más de 24 h requiere un proceso con privilegios fuera de los handlers y queda pendiente.
 
-#### Metadatos EXIF/GPS (DoD, punto 4): pendiente de confirmar
+#### Metadatos EXIF/GPS (DoD, punto 4)
 
-Con la subida directa, el archivo original llega a Storage **antes** de que el servidor pueda tocarlo: no se pueden eliminar los metadatos antes de guardarlo, como suponía la propuesta inicial. La validación del paso 3 tampoco los elimina. Propuesta, sin cambiar el flujo en dos pasos: en la confirmación, el servidor recodifica la imagen con `sharp` (descarta EXIF, GPS, XMP e IPTC y aplica la orientación), sube el resultado como un objeto nuevo `{user_id}/{reportId}/{evidenceId}.{ext}`, registra esa ruta y borra el original. Los bytes viajan entre Storage y el servidor, no en el cuerpo de la petición, así que el límite de Vercel no afecta. Hasta decidirlo, la documentación no da por cumplido el punto 4 de la DoD.
+Con la subida directa, el archivo original llega a Storage **antes** de que el servidor pueda tocarlo, y validar los _magic bytes_ no elimina los metadatos. Decisión (aprobada el 19 de noviembre de 2026, sin cambiar el flujo en dos pasos): en la confirmación, el servidor descarga el original, lo recodifica con `sharp` en el mismo formato (descarta EXIF, GPS, XMP, IPTC y comentarios, aplica la orientación y limita la decodificación a 40 megapíxeles), sube el resultado como un objeto nuevo `{user_id}/{reportId}/{evidenceId}.{ext}`, registra esa ruta y borra el original. Los bytes viajan entre Storage y el servidor, no en el cuerpo de la petición, así que el límite de Vercel no afecta. El original solo existe en la carpeta privada del propio usuario hasta la confirmación o hasta que se borre.
 
 ### Modelo persistente de evidencias (HU-06/T4a)
 

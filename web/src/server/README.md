@@ -17,5 +17,10 @@ servidor. Refleja la fila SQL, con UUID y fechas como cadenas JSON; no valida
 entradas ni crea un cliente, servicio CRUD o sesión. Mantenerlo alineado con las
 migraciones. La integridad y la autorización inicial se verifican en PostgreSQL.
 
-Todavía no hay sesiones ni operaciones de negocio en Next.js. Uso y límites de
+`evidences.ts` implementa la API de evidencias de HU-06/T4 (subida directa en dos
+pasos, confirmación y lectura) con el token Bearer del usuario y la RLS como
+autoridad; `evidence-images.ts` recodifica las imágenes con `sharp` para eliminar
+metadatos. Contrato en [docs/api/evidences.md](../../../docs/api/evidences.md).
+
+Todavía no hay sesiones con cookies en Next.js. Uso y límites de
 la factoría en [la guía de desarrollo](../../../docs/development.md#clientes-supabase).

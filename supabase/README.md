@@ -22,7 +22,9 @@ las aplica al proyecto remoto compartido; su estado debe comprobarse antes del d
 ## Instancia local y migraciones
 
 Supabase CLI 3.1.0 es una dependencia fijada en el lockfile. La configuración
-local usa PostgreSQL 17, API, Auth, Studio y correo local. Storage, Realtime,
+local usa PostgreSQL 17, API, Auth, Studio, correo local y Storage (HU-06/T4:
+_bucket_ privado `report-evidences`, creado por migración, y sus políticas de
+`storage.objects`, que prueba `report_evidences_storage.test.sql`). Realtime,
 Edge Functions y Analytics están desactivados, al igual que el registro público.
 No hay archivos seed; los tres roles se siembran en la propia migración T2. La CLI v3 usa el entorno local por defecto; los comandos de esta
 sección no llevan `--remote` y no necesitan login ni enlazar el proyecto remoto.

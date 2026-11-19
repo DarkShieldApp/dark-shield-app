@@ -5,8 +5,10 @@ import {
   EVIDENCE_MAX_FILE_BYTES,
   EVIDENCE_MAX_FILES,
   EVIDENCE_SIGNATURE_BYTES,
+  EVIDENCE_STORAGE_EXTENSIONS,
   type EvidenceCandidate,
   validateEvidenceBatch,
+  validateEvidenceDeclaration,
   validateEvidenceFile,
 } from '../src/lib/evidences/rules';
 
@@ -310,6 +312,94 @@ describe('envíos con varias evidencias', () => {
         { index: 3, code: 'EVIDENCE_TYPE_NOT_ALLOWED' },
         { index: 4, code: 'EVIDENCE_TYPE_NOT_ALLOWED' },
       ],
+    });
+  });
+});
+
+describe('declaración sin contenido (paso 1 de la subida)', () => {
+  it('acepta lo declarado sin necesitar la firma', () => {
+    expect(
+      validateEvidenceDeclaration({
+        name: 'foto.JPEG',
+        type: ' Image/JPEG ',
+        size: 2048,
+      }),
+    ).toEqual({
+      ok: true,
+      evidence: {
+        name: 'foto.JPEG',
+        kind: 'jpeg',
+        mimeType: 'image/jpeg',
+        extension: 'jpeg',
+        size: 2048,
+      },
+    });
+  });
+
+  it.each([
+    [
+      'nombre con ruta',
+      '../captura.png',
+      'image/png',
+      2048,
+      'EVIDENCE_NAME_INVALID',
+    ],
+    ['archivo vacío', 'captura.png', 'image/png', 0, 'EVIDENCE_EMPTY'],
+    [
+      'archivo demasiado grande',
+      'captura.png',
+      'image/png',
+      EVIDENCE_MAX_FILE_BYTES + 1,
+      'EVIDENCE_TOO_LARGE',
+    ],
+    [
+      'PDF',
+      'factura.pdf',
+      'application/pdf',
+      2048,
+      'EVIDENCE_TYPE_NOT_ALLOWED',
+    ],
+    [
+      'doble extensión',
+      'foto.exe.png',
+      'image/png',
+      2048,
+      'EVIDENCE_TYPE_NOT_ALLOWED',
+    ],
+    [
+      'extensión y MIME distintos',
+      'captura.png',
+      'image/webp',
+      2048,
+      'EVIDENCE_CONTENT_MISMATCH',
+    ],
+  ])(
+    'rechaza %s con el mismo código que validateEvidenceFile',
+    (_case, name, type, size, code) => {
+      expect(validateEvidenceDeclaration({ name, type, size })).toEqual({
+        ok: false,
+        code,
+      });
+    },
+  );
+
+  it('validateEvidenceFile añade la firma a lo declarado', () => {
+    const declared = { name: 'captura.png', type: 'image/png', size: 2048 };
+
+    expect(validateEvidenceDeclaration(declared).ok).toBe(true);
+    expect(validateEvidenceFile({ ...declared, head: jpeg() })).toEqual({
+      ok: false,
+      code: 'EVIDENCE_CONTENT_MISMATCH',
+    });
+  });
+});
+
+describe('extensión canónica en el almacenamiento', () => {
+  it('guarda JPEG siempre como .jpg', () => {
+    expect(EVIDENCE_STORAGE_EXTENSIONS).toEqual({
+      png: 'png',
+      jpeg: 'jpg',
+      webp: 'webp',
     });
   });
 });
