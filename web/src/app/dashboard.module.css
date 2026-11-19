@@ -309,6 +309,27 @@
 .listHeading p {
   font-size: 11px;
 }
+.listHeading h2:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 3px;
+}
+.reportList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.loadMore {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+.loadMore p {
+  margin: 0;
+}
 .filterButton {
   border: 1px solid var(--line);
   background: white;

@@ -31,6 +31,19 @@ import {
   type EvidenceUploadState,
 } from '../lib/evidences/upload';
 import { getAccessToken } from '../lib/supabase/session';
+import {
+  resolveQueryState,
+  type ReportQueryResult,
+} from '../lib/reports/query';
+import {
+  describeQueryStatus,
+  fetchReportsPage,
+  mergeReportPages,
+  prepareQueryTarget,
+  type QueryFailure,
+  type ReportSearchQuery,
+} from '../lib/reports/search';
+import { ReportSummaryCard } from '../components/ReportSummaryCard';
 
 type Section = 'consulta' | 'crear' | 'evidencias';
 
@@ -44,6 +57,10 @@ const noSubscription = () => () => {};
 const readReportParam = () =>
   new URLSearchParams(window.location.search).get('reporte');
 const noReportOnServer = () => null;
+
+const RESULTS_HEADING_ID = 'report-results-heading';
+const INVALID_QUERY_MESSAGE =
+  'Introduce una URL válida con HTTP o HTTPS, sin usuario ni contraseña.';
 
 const PHASE_LABELS: Record<string, string> = {
   requesting: 'Preparando la subida…',
@@ -70,9 +87,20 @@ export default function Dashboard() {
   const [section, setSection] = useState<Section>('consulta');
   const [query, setQuery] = useState('');
   const [scope, setScope] = useState<'page' | 'domain'>('page');
-  const [queryState, setQueryState] = useState<
-    'idle' | 'invalid' | 'disconnected'
-  >('idle');
+  const [queryInvalid, setQueryInvalid] = useState(false);
+  const [activeQuery, setActiveQuery] = useState<ReportSearchQuery | null>(
+    null,
+  );
+  const [queryLoading, setQueryLoading] = useState(false);
+  const [queryResult, setQueryResult] = useState<ReportQueryResult | null>(
+    null,
+  );
+  const [queryError, setQueryError] = useState<QueryFailure | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [moreError, setMoreError] = useState<QueryFailure | null>(null);
+  // Cada petición de foco es un objeto nuevo, para que el efecto se repita.
+  const [focusRequest, setFocusRequest] = useState<{ id: string } | null>(null);
+  const searchAbort = useRef<AbortController | null>(null);
   const [draft, setDraft] = useState({
     pageUrl: '',
     pattern: '',
@@ -108,31 +136,81 @@ export default function Dashboard() {
   );
   const busy = selection.items.some((item) => isBusy(uploads[item.key]));
 
+  const queryView = resolveQueryState({
+    isLoading: queryLoading,
+    result: queryResult,
+    error: queryError,
+    query: activeQuery,
+  });
+  const moreView = moreError ? resolveQueryState({ error: moreError }) : null;
+  const moreFailure = moreView?.status === 'error' ? moreView : null;
+
   useEffect(() => {
     const active = previewUrls.current;
     return () => active.forEach((url) => URL.revokeObjectURL(url));
   }, []);
 
-  function search(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const target = query.trim();
-    if (!target) {
-      setQueryState('invalid');
+  useEffect(() => () => searchAbort.current?.abort(), []);
+
+  useEffect(() => {
+    if (focusRequest) document.getElementById(focusRequest.id)?.focus();
+  }, [focusRequest]);
+
+  function focusQueryInput() {
+    document.getElementById('query')?.focus();
+  }
+
+  // Consulta de solo lectura (HU-01/T4 y T9): una búsqueda nueva cancela la
+  // anterior y su paginación para que no se mezclen respuestas.
+  async function runSearch(next: ReportSearchQuery) {
+    searchAbort.current?.abort();
+    const controller = new AbortController();
+    searchAbort.current = controller;
+    setActiveQuery(next);
+    setQueryLoading(true);
+    setQueryResult(null);
+    setQueryError(null);
+    setLoadingMore(false);
+    setMoreError(null);
+    const outcome = await fetchReportsPage(next, null, {
+      signal: controller.signal,
+    });
+    if (controller.signal.aborted) return;
+    setQueryLoading(false);
+    setQueryResult(outcome.result ?? null);
+    setQueryError(outcome.error ?? null);
+    setFocusRequest({ id: RESULTS_HEADING_ID });
+  }
+
+  async function loadMore() {
+    const cursor = queryResult?.nextCursor;
+    const signal = searchAbort.current?.signal;
+    if (!activeQuery || !queryResult || !cursor || loadingMore) return;
+    setLoadingMore(true);
+    setMoreError(null);
+    const outcome = await fetchReportsPage(activeQuery, cursor, { signal });
+    if (signal?.aborted) return;
+    setLoadingMore(false);
+    if (outcome.error) {
+      setMoreError(outcome.error);
       return;
     }
-    try {
-      const url = new URL(
-        target.includes('://') ? target : `https://${target}`,
-      );
-      if (!['http:', 'https:'].includes(url.protocol)) {
-        setQueryState('invalid');
-        return;
-      }
-      if (scope === 'domain') setQuery(url.hostname);
-      setQueryState('disconnected');
-    } catch {
-      setQueryState('invalid');
+    const merged = mergeReportPages(queryResult, outcome.result);
+    setQueryResult(merged);
+    const firstNew = merged.items[queryResult.items.length];
+    if (firstNew) setFocusRequest({ id: `report-${firstNew.id}` });
+  }
+
+  function search(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const target = prepareQueryTarget(query, scope);
+    if (!target) {
+      setQueryInvalid(true);
+      return;
     }
+    setQueryInvalid(false);
+    if (scope === 'domain') setQuery(target);
+    void runSearch({ scope, target });
   }
 
   async function selectFiles(event: ChangeEvent<HTMLInputElement>) {
@@ -314,7 +392,7 @@ export default function Dashboard() {
                     }
                     onClick={() => {
                       setScope('page');
-                      setQueryState('idle');
+                      setQueryInvalid(false);
                     }}
                   >
                     Página
@@ -328,7 +406,7 @@ export default function Dashboard() {
                     }
                     onClick={() => {
                       setScope('domain');
-                      setQueryState('idle');
+                      setQueryInvalid(false);
                     }}
                   >
                     Dominio
@@ -341,10 +419,12 @@ export default function Dashboard() {
                   <span className={styles.inputIcon}>↗</span>
                   <input
                     id="query"
+                    aria-invalid={queryInvalid}
+                    aria-describedby="query-hint"
                     value={query}
                     onChange={(event) => {
                       setQuery(event.target.value);
-                      setQueryState('idle');
+                      setQueryInvalid(false);
                     }}
                     placeholder={
                       scope === 'page'
@@ -356,17 +436,19 @@ export default function Dashboard() {
                     Consultar <span>→</span>
                   </button>
                 </form>
-                <div className={styles.searchHint}>
+                <div className={styles.searchHint} id="query-hint">
                   <span>ⓘ</span> La consulta es de solo lectura. Los reportes
                   reflejan experiencias comunicadas por la comunidad.
                 </div>
               </section>
               <div className={styles.listHeading}>
                 <div>
-                  <h2>Reportes de la comunidad</h2>
+                  <h2 id={RESULTS_HEADING_ID} tabIndex={-1}>
+                    Reportes de la comunidad
+                  </h2>
                   <p>
-                    {queryState === 'disconnected'
-                      ? `Búsqueda preparada para ${query}`
+                    {activeQuery
+                      ? `Resultados para ${activeQuery.scope === 'page' ? 'la página' : 'el dominio'} ${activeQuery.target}`
                       : 'Consulta información asociada a una página.'}
                   </p>
                 </div>
@@ -374,39 +456,136 @@ export default function Dashboard() {
                   ↕ <span>Más recientes</span>
                 </button>
               </div>
-              <section className={styles.emptyCard}>
-                <div className={styles.emptyIllustration}>
-                  <div className={styles.orbit}>⌕</div>
-                  <span className={styles.sparkle}>✳</span>
-                  <span className={styles.dot}>•</span>
-                </div>
-                <h3>
-                  {queryState === 'disconnected'
-                    ? 'Consulta lista para conectar'
-                    : queryState === 'invalid'
-                      ? 'Revisa la dirección'
-                      : 'Empieza con una búsqueda'}
-                </h3>
-                <p>
-                  {queryState === 'disconnected'
-                    ? 'La API de reportes todavía no está implementada. No se han cargado resultados.'
-                    : queryState === 'invalid'
-                      ? 'Introduce una URL válida con HTTP o HTTPS para preparar la consulta.'
-                      : 'Introduce la dirección de una página para buscar reportes relacionados.'}
-                </p>
-                {queryState === 'disconnected' ? (
-                  <span className={styles.pendingTag}>
-                    <i /> API pendiente de conexión
-                  </span>
-                ) : (
-                  <button
-                    className={styles.textButton}
-                    onClick={() => document.getElementById('query')?.focus()}
+              <p className={styles.srOnly} role="status">
+                {queryInvalid
+                  ? INVALID_QUERY_MESSAGE
+                  : describeQueryStatus(queryView)}
+              </p>
+              {!queryInvalid && queryView.status === 'success' ? (
+                <>
+                  <ul
+                    className={styles.reportList}
+                    aria-labelledby={RESULTS_HEADING_ID}
                   >
-                    Introducir una dirección <span>→</span>
-                  </button>
-                )}
-              </section>
+                    {queryView.items.map((item) => (
+                      <li key={item.id}>
+                        <ReportSummaryCard report={item} />
+                      </li>
+                    ))}
+                  </ul>
+                  {(queryView.nextCursor || moreFailure) && (
+                    <div className={styles.loadMore}>
+                      {moreFailure && (
+                        <p className={styles.error}>{moreFailure.message}</p>
+                      )}
+                      {queryView.nextCursor &&
+                        (!moreFailure || moreFailure.canRetry) && (
+                          <button
+                            type="button"
+                            className={styles.secondaryButton}
+                            disabled={loadingMore}
+                            onClick={loadMore}
+                          >
+                            {loadingMore
+                              ? 'Cargando…'
+                              : moreFailure
+                                ? 'Reintentar'
+                                : 'Cargar más'}
+                          </button>
+                        )}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <section
+                  className={styles.emptyCard}
+                  aria-labelledby="query-state-title"
+                  aria-busy={queryView.status === 'loading'}
+                >
+                  <div className={styles.emptyIllustration} aria-hidden="true">
+                    <div className={styles.orbit}>⌕</div>
+                    <span className={styles.sparkle}>✳</span>
+                    <span className={styles.dot}>•</span>
+                  </div>
+                  {queryInvalid ? (
+                    <>
+                      <h3 id="query-state-title">Revisa la dirección</h3>
+                      <p>{INVALID_QUERY_MESSAGE}</p>
+                      <button
+                        type="button"
+                        className={styles.textButton}
+                        onClick={focusQueryInput}
+                      >
+                        Corregir la dirección <span>→</span>
+                      </button>
+                    </>
+                  ) : queryView.status === 'loading' ? (
+                    <>
+                      <h3 id="query-state-title">Buscando reportes…</h3>
+                      <p>
+                        Consultando los reportes publicados para{' '}
+                        {activeQuery?.target}.
+                      </p>
+                    </>
+                  ) : queryView.status === 'empty' ? (
+                    <>
+                      <h3 id="query-state-title">
+                        Sin reportes para esta búsqueda
+                      </h3>
+                      <p>
+                        {queryView.message} Que no haya reportes no significa
+                        que la página esté libre de patrones oscuros.
+                      </p>
+                      <button
+                        type="button"
+                        className={styles.textButton}
+                        onClick={focusQueryInput}
+                      >
+                        Probar otra dirección <span>→</span>
+                      </button>
+                    </>
+                  ) : queryView.status === 'error' ? (
+                    <>
+                      <h3 id="query-state-title">
+                        No se pudo completar la consulta
+                      </h3>
+                      <p>{queryView.message}</p>
+                      {queryView.canRetry && activeQuery ? (
+                        <button
+                          type="button"
+                          className={styles.secondaryButton}
+                          onClick={() => void runSearch(activeQuery)}
+                        >
+                          Reintentar
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className={styles.textButton}
+                          onClick={focusQueryInput}
+                        >
+                          Corregir la búsqueda <span>→</span>
+                        </button>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <h3 id="query-state-title">Empieza con una búsqueda</h3>
+                      <p>
+                        Introduce la dirección de una página para buscar
+                        reportes relacionados.
+                      </p>
+                      <button
+                        type="button"
+                        className={styles.textButton}
+                        onClick={focusQueryInput}
+                      >
+                        Introducir una dirección <span>→</span>
+                      </button>
+                    </>
+                  )}
+                </section>
+              )}
               <div className={styles.disclaimer}>
                 <span>✳</span>
                 <p>
