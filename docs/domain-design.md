@@ -262,14 +262,22 @@ la navegación y los estados iniciales. HU-01/T5 implementó el handler `GET /ap
 - Proyección pública sin query ni fragmento: el campo `target_url` de la respuesta es `page_key` y `anon` deja de leer la columna `target_url`.
 - Cursor validado (fecha ISO 8601 y UUID) antes de usarlo en el filtro.
 
-El contrato HTTP completo está en [`docs/api/reports.md`](api/reports.md#6-get-apireports--consulta-por-página-o-dominio). La credibilidad corresponde a HU-01/T7 y HU-09, y la limitación de uso a HU-23.
+El contrato HTTP completo está en [`docs/api/reports.md`](api/reports.md#6-get-apireports--consulta-por-página-o-dominio). La credibilidad se presenta desde HU-01/T7 (véase más abajo), su explicación corresponde a HU-09/T3 y la limitación de uso a HU-23.
 
 **Implementación (HU-01/T6):** la pantalla de consulta queda conectada al handler y montada en `/consulta`, enlazada desde la portada.
 
 - `web/src/lib/reports/search.ts` prepara el objetivo en el cliente (HTTP(S), sin credenciales; sin query ni fragmento para página y solo el host para dominio), hace la petición `GET` de solo lectura y traduce la respuesta para `resolveQueryState`. Un `200` con `items: []` es estado vacío. Un `400` muestra el mensaje de `QUERY_ERROR_MESSAGES` y pide corregir la entrada. Los fallos de servicio o de red y las respuestas mal formadas se presentan como `QUERY_FAILED` o `SERVICE_UNAVAILABLE`, con reintento. Una búsqueda nueva cancela la anterior con `AbortController`.
-- `web/src/components/ReportSummaryCard.tsx` muestra por reporte el título, la categoría (etiquetas de `web/src/lib/reports/categories.ts`, compartidas con el formulario de HU-05), la página afectada sin query, la fecha en es-ES (zona `Europe/Madrid`, fija para que no dependa del visitante), un extracto de la descripción sin la sección «Pasos para reproducir:» y recortado por puntos de código, el aviso «Reporte comunitario, no es un veredicto» (HU01-FL-04) y el hueco «Credibilidad no disponible», sin inferirla, hasta HU-01/T7.
+- `web/src/components/ReportSummaryCard.tsx` muestra por reporte el título, la categoría (etiquetas de `web/src/lib/reports/categories.ts`, compartidas con el formulario de HU-05), la página afectada sin query, la fecha en es-ES (zona `Europe/Madrid`, fija para que no dependa del visitante), un extracto de la descripción sin la sección «Pasos para reproducir:» y recortado por puntos de código, el aviso «Reporte comunitario, no es un veredicto» (HU01-FL-04) y el estado de credibilidad de HU-01/T7.
 - «Cargar más» usa `nextCursor` y añade la página siguiente sin repetir reportes. El listado es una lista semántica bajo el encabezado de resultados. Al terminar una búsqueda, el foco pasa a ese encabezado y, al cargar más, al primer reporte nuevo. Una región `role="status"` anuncia el estado.
 - El detalle completo (HU-02) no forma parte de este listado.
+
+**Implementación (HU-01/T7):** el listado presenta el estado de credibilidad de cada reporte sin darlo por cierto.
+
+- `queryReports` (`web/src/server/reports.ts`) añade `items[].credibility` con una sola llamada a `getReportsCredibility` por página y el mismo cliente sin sesión. Si un reporte no tiene resultado, su valor es `null`. Si el cálculo falla, se registra (`console.error` u opción `logError`) y todos quedan en `null`: la consulta no pasa a error ni a lista vacía (flujo alternativo de HU-01). Contrato en [`docs/api/reports.md`](api/reports.md#credibilidad-en-el-listado).
+- `ReportCredibilitySummary` (`web/src/lib/reports/query.ts`) replica la forma de `CredibilityResult` sin importar código del servidor. Un test de tipos comprueba que ambos son asignables entre sí.
+- `parseReportsResponse` normaliza a `null` una credibilidad mal formada en lugar de descartar la respuesta.
+- `describeCredibility` (`web/src/lib/reports/summary.ts`) da la etiqueta: «Credibilidad no disponible» sin valor, «Datos insuficientes» si `sufficientData` no es `true` (nunca «Media») y, en otro caso, «Alta», «Media» o «Baja». `ReportSummaryCard` la muestra como texto, con un color de apoyo con contraste suficiente, y debajo el aviso «La credibilidad cambia con nuevas evidencias y valoraciones; no es una garantía» (HU01-FL-06 y HU-09). No muestra la puntuación ni explica los factores.
+- **Pendiente:** HU-09/T3 explica los factores. Puede reutilizar `describeCredibility` y su `status`.
 
 #### Integración y decisiones de implementación
 
@@ -599,7 +607,7 @@ Las pruebas `profiles_backfill`, `reports_backfill` y `roles_backfill` reaplican
 
 **Requisito relacionado:** HU-09 — Consultar la credibilidad de un reporte.
 **Origen de esta definición:** HU-09, T1 — Diseñar un algoritmo de ponderación que distinga entre votos de usuarios según su nivel de confianza.
-**Estado:** diseño (T1) e **implementado para HU-09/T2** (cálculo y acceso a datos; véase «Implementación (HU-09/T2)»). Quedan pendientes la explicación de factores (HU-09/T3), la invocación tras guardar una evidencia (HU-06/T5) o una valoración (HU-08/T4 y T7) y la presentación en el listado (HU-01/T7). Respeta el contrato acordado en la PR #13 (fila «Credibilidad (T5)» de las decisiones de HU-06/T4) y tiene en cuenta HU-10/T2–T3 (PR #28).
+**Estado:** diseño (T1) e **implementado para HU-09/T2** (cálculo y acceso a datos; véase «Implementación (HU-09/T2)»). La presentación en el listado está implementada desde HU-01/T7. Quedan pendientes la explicación de factores (HU-09/T3) y la invocación tras guardar una evidencia (HU-06/T5) o una valoración (HU-08/T4 y T7). Respeta el contrato acordado en la PR #13 (fila «Credibilidad (T5)» de las decisiones de HU-06/T4) y tiene en cuenta HU-10/T2–T3 (PR #28).
 
 ### Criterios que debe cumplir
 
@@ -720,6 +728,8 @@ export interface CredibilityResult {
 `factors` permite a HU-09/T3 explicar el resultado («3 validaciones, 1 invalidación, 2 evidencias») sin exponer quién valoró ni su confianza. El `context` de `recalculateReportCredibility` solo se usa para registrar la causa en los _logs_: **no cambia el resultado**, condición necesaria para la idempotencia.
 
 #### Presentación (HU-09/T3 y HU-01/T7)
+
+HU-01/T7 implementa la parte del listado (etiqueta, «Datos insuficientes», aviso y ausencia de valor). HU-09/T3 añadirá la explicación de los factores.
 
 Mostrar el nivel con texto (no solo color), la indicación «Datos insuficientes» cuando `sufficientData` sea `false` y un aviso del tipo «La credibilidad cambia con nuevas evidencias y valoraciones; no es una garantía de que el patrón exista». Si la credibilidad no está disponible (error), se muestra el reporte sin inventarla (HU01-FL-06 y flujos alternativos de HU-01).
 

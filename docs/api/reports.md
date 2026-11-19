@@ -206,7 +206,21 @@ GET /api/reports?scope=domain&target=example.co.uk&limit=10&cursor=<nextCursor> 
       "pattern_type": "sneaking",
       "target_url": "https://tienda.example.com/checkout",
       "page_key": "https://tienda.example.com/checkout",
-      "created_at": "2026-11-18T10:00:00.000Z"
+      "created_at": "2026-11-18T10:00:00.000Z",
+      "credibility": {
+        "level": "medium",
+        "score": 50,
+        "sufficientData": false,
+        "updatedAt": "2026-11-18T10:00:00.000Z",
+        "factors": {
+          "visibleEvidences": 0,
+          "validations": 0,
+          "invalidations": 0,
+          "assessors": 0,
+          "supportWeight": 0,
+          "againstWeight": 0
+        }
+      }
     }
   ],
   "nextCursor": "eyJjcmVhdGVkQXQiOiIyMDI2LTExLTE4VDEwOjAwOjAwLjAwMFoiLCJpZCI6ImFhYWFhYWFhLTExMTEtMjIyMi0zMzMzLTQ0NDQ0NDQ0NDQ0NCJ9"
@@ -222,9 +236,30 @@ GET /api/reports?scope=domain&target=example.co.uk&limit=10&cursor=<nextCursor> 
 | `items[].target_url`   | URL de la página **sin query ni fragmento**; es igual a `page_key` (véase «Privacidad de la proyección pública»). |
 | `items[].page_key`     | Clave de página normalizada.                                                                                      |
 | `items[].created_at`   | Fecha de creación (ISO 8601).                                                                                     |
+| `items[].credibility`  | Estado de credibilidad (HU-01/T7 y HU-09) o `null` si no está disponible; véase «Credibilidad en el listado».     |
 | `nextCursor`           | Cursor para pedir la página siguiente, o `null` si no hay más resultados.                                         |
 
-Si no hay coincidencias, la respuesta es `200 OK` con `{ "items": [], "nextCursor": null }`: es una búsqueda completada sin resultados, no un error (`HU01-FL-03`). La respuesta no incluye `author_id` ni el estado de credibilidad (HU-01/T7 y HU-09).
+Si no hay coincidencias, la respuesta es `200 OK` con `{ "items": [], "nextCursor": null }`: es una búsqueda completada sin resultados, no un error (`HU01-FL-03`). La respuesta no incluye `author_id`.
+
+### Credibilidad en el listado
+
+Desde HU-01/T7 cada item lleva el campo **aditivo** `credibility`. Los clientes anteriores pueden ignorarlo y los nuevos deben aceptar que falte. El servidor lo obtiene con una sola llamada a `getReportsCredibility` por página (la RPC `report_credibility_inputs`), usando el mismo cliente sin sesión que la consulta, y no la hace si la página está vacía. Diseño y fórmula en [`docs/domain-design.md`](../domain-design.md#credibilidad-de-reportes-hu-09).
+
+| Campo                        | Descripción                                                                                                       |
+| :--------------------------- | :---------------------------------------------------------------------------------------------------------------- |
+| `credibility.level`          | `low`, `medium` o `high`. Solo tiene significado si `sufficientData` es `true`.                                   |
+| `credibility.score`          | Puntuación de 0 a 100. Es un dato del cálculo y el listado no la muestra como veredicto.                          |
+| `credibility.sufficientData` | `false` si aún no hay valoraciones suficientes. En ese caso `level` es `medium` en el sentido de «indeterminado». |
+| `credibility.updatedAt`      | Fecha de la entrada contada más reciente o, si no hay ninguna, la de creación del reporte (ISO 8601).             |
+| `credibility.factors`        | Recuentos y pesos del cálculo. Su explicación corresponde a HU-09/T3.                                             |
+
+Semántica:
+
+- **`null`:** la credibilidad no está disponible para ese reporte (el cálculo no devolvió resultado para él o falló). El cliente muestra «Credibilidad no disponible» y no la infiere.
+- **Datos insuficientes:** con `sufficientData` distinto de `true`, el cliente muestra «Datos insuficientes», nunca «Media», aunque `level` traiga otro valor.
+- **Valoración dinámica:** la credibilidad se calcula al consultar y cambia con nuevas evidencias y valoraciones (HU01-FL-06). No es una garantía de que el patrón exista.
+- **Fallo de credibilidad:** si la RPC falla o devuelve agregados incoherentes, el error se registra en el servidor y la respuesta sigue siendo `200 OK` con los reportes y `credibility: null` en cada uno. Nunca se convierte en error ni en lista vacía.
+- **Cliente:** `parseReportsResponse` acepta `credibility` ausente, `null` o bien formado. Si un item lo trae mal formado, ese item pasa a `credibility: null` y el resto de la respuesta se conserva.
 
 ### Privacidad de la proyección pública
 
@@ -270,4 +305,4 @@ Todas las respuestas de error tienen la forma `{ "error": { "code", "message" } 
 
 ### Fuera de alcance
 
-Credibilidad (HU-01/T7 y HU-09), interfaz de consulta (HU-01/T4 y T6) y limitación de uso frente a extracción masiva (HU-23).
+Explicación de los factores de la credibilidad (HU-09/T3), interfaz de consulta (HU-01/T4 y T6) y limitación de uso frente a extracción masiva (HU-23).

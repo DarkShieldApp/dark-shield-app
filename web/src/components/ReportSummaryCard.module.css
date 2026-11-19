@@ -56,8 +56,47 @@
 .page {
   overflow-wrap: anywhere;
 }
+/* HU-01/T7: el nivel se lee siempre como texto; el color solo lo refuerza.
+   Contraste del texto sobre su fondo ≥ 5,8:1 en todos los estados. */
+.credibilityGroup {
+  flex-basis: 100%;
+}
+.meta .credibilityValue {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
 .credibility {
+  font-weight: 600;
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+.credibilityHigh {
+  color: #1d6a3c;
+  background: #e7f4ec;
+}
+.credibilityMedium {
+  color: #7a4f00;
+  background: #fdf3dc;
+}
+.credibilityLow {
+  color: #a3261d;
+  background: #fcebea;
+}
+.credibilityInsufficient {
+  color: #44524f;
+  background: #edf1f0;
+}
+.credibilityUnavailable {
+  color: #3f5552;
+  font-weight: 400;
   font-style: italic;
+  padding: 0;
+}
+.credibilityNotice {
+  font-size: 10px;
+  color: #5b6d69;
 }
 .excerpt {
   margin: 0;

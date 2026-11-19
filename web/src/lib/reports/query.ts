@@ -36,6 +36,33 @@ export const QUERY_ERROR_MESSAGES: Record<string, string> = {
 
 export type ReportQueryScope = 'page' | 'domain';
 
+export type ReportCredibilityLevel = 'low' | 'medium' | 'high';
+
+/** Factores del cálculo; los explica HU-09/T3, no el listado. */
+export interface ReportCredibilityFactors {
+  visibleEvidences: number;
+  validations: number;
+  invalidations: number;
+  assessors: number;
+  supportWeight: number;
+  againstWeight: number;
+}
+
+/**
+ * Credibilidad de un reporte en `GET /api/reports` (HU-01/T7). Misma forma
+ * que `CredibilityResult` de `server/credibility.ts`, sin importar código del
+ * servidor. Es una valoración dinámica (HU01-FL-06), no una garantía: si
+ * `sufficientData` no es `true`, `level` no tiene significado propio.
+ */
+export interface ReportCredibilitySummary {
+  /** 0-100. No se muestra como veredicto en el listado. */
+  score: number;
+  level: ReportCredibilityLevel;
+  updatedAt: string;
+  sufficientData?: boolean;
+  factors?: ReportCredibilityFactors;
+}
+
 export interface ReportSummaryItem {
   id: string;
   title: string;
@@ -48,6 +75,11 @@ export interface ReportSummaryItem {
   target_url: string;
   page_key: string;
   created_at: string;
+  /**
+   * HU-01/T7. `null` si no está disponible (reporte sin resultado o fallo del
+   * cálculo); el cliente nunca la infiere. Ausente en respuestas anteriores.
+   */
+  credibility?: ReportCredibilitySummary | null;
 }
 
 export interface ReportQueryResult {
