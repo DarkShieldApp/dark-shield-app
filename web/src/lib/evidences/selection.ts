@@ -44,7 +44,7 @@ export const EMPTY_EVIDENCE_SELECTION: EvidenceSelection<never> = {
 
 const MEBIBYTE = 1024 * 1024;
 
-// La lista blanca de rules.ts tiene varios tipos: «PNG, JPG, JPEG, WEBP o PDF».
+// La lista blanca de rules.ts tiene varios tipos: «PNG, JPG, JPEG o WEBP».
 const ALLOWED_EXTENSION_LABELS = ALLOWED_EVIDENCE_TYPES.flatMap(
   ({ extensions }) => extensions.map((extension) => extension.toUpperCase()),
 );

@@ -26,6 +26,22 @@ function pngFile(name: string, extraBytes = 64, lastModified = 1): File {
   return new File([body], name, { type: 'image/png', lastModified });
 }
 
+function webpFile(name: string): File {
+  const header = [
+    ...ascii('RIFF'),
+    0x24,
+    0x00,
+    0x00,
+    0x00,
+    ...ascii('WEBPVP8 '),
+  ];
+  return new File([new Uint8Array(header)], name, {
+    type: 'image/webp',
+    lastModified: 1,
+  });
+}
+
+/** Un PDF real: ya no se admite (decisión del PO). */
 function pdfFile(name: string): File {
   return new File([new Uint8Array(ascii('%PDF-1.7\n%...'))], name, {
     type: 'application/pdf',
@@ -128,7 +144,7 @@ describe('resultado por archivo', () => {
   it('acepta los archivos válidos con el tipo normalizado', async () => {
     const { selection } = await selectionWith([
       pngFile('captura.png'),
-      pdfFile('informe.pdf'),
+      webpFile('pantalla.webp'),
     ]);
 
     expect(selection.items).toHaveLength(2);
@@ -138,7 +154,16 @@ describe('resultado por archivo', () => {
     });
     expect(selection.items[1]).toMatchObject({
       status: 'accepted',
-      evidence: { kind: 'pdf' },
+      evidence: { kind: 'webp', mimeType: 'image/webp' },
+    });
+  });
+
+  it('rechaza un PDF como tipo no permitido', async () => {
+    const { selection } = await selectionWith([pdfFile('informe.pdf')]);
+
+    expect(selection.items[0]).toMatchObject({
+      status: 'rejected',
+      code: EVIDENCE_ERROR_CODES.TYPE_NOT_ALLOWED,
     });
   });
 
@@ -345,20 +370,21 @@ describe('envío preparado', () => {
     const { selection } = await selectionWith([
       pngFile('a.png'),
       disguisedFile('x.png'),
-      pdfFile('b.pdf'),
+      webpFile('b.webp'),
+      pdfFile('c.pdf'),
     ]);
 
     const submission = evidenceSubmission(selection);
 
     expect(submission.files.map((file) => file.name)).toEqual([
       'a.png',
-      'b.pdf',
+      'b.webp',
     ]);
     expect(submission.batch).toEqual({
       ok: true,
       evidences: [
         expect.objectContaining({ name: 'a.png', kind: 'png' }),
-        expect.objectContaining({ name: 'b.pdf', kind: 'pdf' }),
+        expect.objectContaining({ name: 'b.webp', kind: 'webp' }),
       ],
     });
   });
@@ -393,8 +419,9 @@ describe('mensajes en español', () => {
   it('enumera los tipos permitidos en el mensaje de tipo no admitido', () => {
     const message = EVIDENCE_ERROR_MESSAGES.EVIDENCE_TYPE_NOT_ALLOWED;
 
-    for (const extension of ['PNG', 'JPG', 'JPEG', 'WEBP', 'PDF']) {
+    for (const extension of ['PNG', 'JPG', 'JPEG', 'WEBP']) {
       expect(message).toContain(extension);
     }
+    expect(message).not.toContain('PDF');
   });
 });
