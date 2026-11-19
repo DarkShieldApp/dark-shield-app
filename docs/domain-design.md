@@ -262,12 +262,19 @@ la navegación y los estados iniciales. HU-01/T5 implementó el handler `GET /ap
 - Proyección pública sin query ni fragmento: el campo `target_url` de la respuesta es `page_key` y `anon` deja de leer la columna `target_url`.
 - Cursor validado (fecha ISO 8601 y UUID) antes de usarlo en el filtro.
 
-El contrato HTTP completo está en [`docs/api/reports.md`](api/reports.md#6-get-apireports--consulta-por-página-o-dominio). La conexión de la pantalla de consulta con el handler sigue pendiente (HU-01/T4 y T6); la credibilidad corresponde a HU-01/T7 y HU-09, y la limitación de uso a HU-23.
+El contrato HTTP completo está en [`docs/api/reports.md`](api/reports.md#6-get-apireports--consulta-por-página-o-dominio). La credibilidad corresponde a HU-01/T7 y HU-09, y la limitación de uso a HU-23.
+
+**Implementación (HU-01/T6):** la pantalla de consulta queda conectada al handler y montada en `/consulta`, enlazada desde la portada.
+
+- `web/src/lib/reports/search.ts` prepara el objetivo en el cliente (HTTP(S), sin credenciales; sin query ni fragmento para página y solo el host para dominio), hace la petición `GET` de solo lectura y traduce la respuesta para `resolveQueryState`. Un `200` con `items: []` es estado vacío. Un `400` muestra el mensaje de `QUERY_ERROR_MESSAGES` y pide corregir la entrada. Los fallos de servicio o de red y las respuestas mal formadas se presentan como `QUERY_FAILED` o `SERVICE_UNAVAILABLE`, con reintento. Una búsqueda nueva cancela la anterior con `AbortController`.
+- `web/src/components/ReportSummaryCard.tsx` muestra por reporte el título, la categoría (etiquetas de `web/src/lib/reports/categories.ts`, compartidas con el formulario de HU-05), la página afectada sin query, la fecha en es-ES (zona `Europe/Madrid`, fija para que no dependa del visitante), un extracto de la descripción sin la sección «Pasos para reproducir:» y recortado por puntos de código, el aviso «Reporte comunitario, no es un veredicto» (HU01-FL-04) y el hueco «Credibilidad no disponible», sin inferirla, hasta HU-01/T7.
+- «Cargar más» usa `nextCursor` y añade la página siguiente sin repetir reportes. El listado es una lista semántica bajo el encabezado de resultados. Al terminar una búsqueda, el foco pasa a ese encabezado y, al cargar más, al primer reporte nuevo. Una región `role="status"` anuncia el estado.
+- El detalle completo (HU-02) no forma parte de este listado.
 
 #### Integración y decisiones de implementación
 
 - HU-05 debe hacer consultable la página afectada por cada reporte con la clave definida aquí; la forma de persistir y derivar esa clave se resuelve al diseñar el modelo de reportes.
-- El servidor implementa validación, búsqueda, paginación y proyección. Conectar el buscador de HU-01/T4 con ese contrato sigue pendiente. La extensión lo consumirá al abordar HU-17.
+- El servidor implementa validación, búsqueda, paginación y proyección, y el buscador de HU-01/T4 lo consume desde HU-01/T6. La extensión lo consumirá al abordar HU-17.
 - El uso de la Public Suffix List requiere una implementación mantenida y una política para actualizar sus datos; no se debe asumir que los dos últimos componentes separados por puntos identifican siempre el dominio registrable. Se usa `tldts` con versión exacta; la política de actualización y la limitación de los reportes anteriores a HU-01/T3 están en [`docs/api/reports.md`](api/reports.md#public-suffix-list-implementación-y-actualización).
 - Los límites de página ayudan a acotar respuestas, pero no sustituyen los controles contra extracción masiva previstos por el ConOps.
 
