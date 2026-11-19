@@ -1,8 +1,11 @@
-# API HTTP
+﻿# API HTTP
 
-Aquí se añadirán los Route Handlers de Next.js (`<recurso>/route.ts`) al implementar
-las historias de usuario. Todavía no existe ningún endpoint.
+Route Handlers de Next.js (`<recurso>/route.ts`) que exponen la API HTTP consumida por la plataforma web y la extensión de navegador.
 
-Los handlers validarán la entrada y la identidad del usuario y delegarán las reglas
-de negocio en `src/server/`. La extensión consumirá esta API. Compartir TypeScript
-no sustituye la validación de los datos recibidos por HTTP.
+Los handlers validan la entrada y la identidad del usuario y delegan las reglas de negocio en `src/server/`.
+
+## Endpoints disponibles
+
+| Método | Ruta           | Descripción                                                                                                  | Especificación                                         |
+| :----- | :------------- | :----------------------------------------------------------------------------------------------------------- | :----------------------------------------------------- |
+| `POST` | `/api/reports` | Crea y persiste un nuevo reporte de _dark pattern_ asociado a un colaborador autenticado y activo (`HU-05`). | [docs/api/reports.md](../../../../docs/api/reports.md) |
