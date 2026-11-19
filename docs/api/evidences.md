@@ -6,6 +6,7 @@ Contrato HTTP para aportar y consultar evidencias de un reporte (HU-06/T4). Las 
 - **Lógica y persistencia:** `web/src/server/evidences.ts`
 - **Eliminación de metadatos:** `web/src/server/evidence-images.ts` (`sharp`)
 - **Reglas compartidas:** `web/src/lib/evidences/rules.ts`
+- **Cliente (navegador):** `web/src/lib/evidences/upload.ts`, usado por la interfaz de evidencias (HU-06/T3)
 - **Datos:** tabla `public.report_evidences` y _bucket_ privado `report-evidences` de Supabase Storage
 
 ---
