@@ -87,7 +87,7 @@ el mismo objeto que la ruta o `null` para un sujeto sin perfil activo.
 
 - **HU-05** comprobará `reports.create`, identidad, actividad y reglas de creación antes de habilitar la escritura. La consulta pública funciona con su política de lectura.
 - **HU-06** incorporará `evidences.add` al flujo de metadatos y Storage. Los [endpoints de evidencias](evidences.md) ya aplican Bearer, RLS y las políticas del bucket privado. Revocar este permiso todavía no bloquea las subidas que admite HU-06. Su moderación comprueba un administrador activo por `role_code`; la armonización requiere una decisión de permisos.
-- **HU-08** combinará `assessments.submit` con confianza, identidad, elegibilidad y reglas de repetición. La tabla de valoraciones sigue cerrada a la API.
+- **HU-08/T2** combina sesión, perfil activo, `assessments.submit` y un mínimo de confianza configurable mediante `checkAssessmentAuthorization`. Sin un mínimo válido deniega el acceso. Véase el [contrato para T4 y las decisiones pendientes](../hu08-t2-authorization.md). La tabla de valoraciones sigue cerrada a la API; elegibilidad del reporte y reglas de participación quedan para T4 tras su acuerdo funcional.
 - **HU-10** podrá consumir los permisos propios al conectar el perfil de ejemplo con una sesión real. **HU-11** aportará registro, login, cookies y renovación.
 - **HU-15 y HU-18** incorporarán capacidades específicas por decisión del equipo y nueva migración.
 
