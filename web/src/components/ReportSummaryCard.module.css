@@ -98,6 +98,55 @@
   font-size: 10px;
   color: #5b6d69;
 }
+.credibilityDetails {
+  margin-top: 5px;
+  color: #3f5552;
+  font-size: 10px;
+}
+.credibilityDetails summary {
+  width: fit-content;
+  color: #167c72;
+  font-weight: 600;
+  cursor: pointer;
+}
+.credibilityDetails summary:focus-visible {
+  outline: 2px solid #167c72;
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+.factorsIntro {
+  max-width: 540px;
+  margin: 8px 0;
+  color: #5b6d69;
+  line-height: 1.5;
+}
+.factorsList {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 8px 16px;
+  margin: 8px 0 2px;
+}
+.factorsList div {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 8px;
+  padding-top: 5px;
+  border-top: 1px solid #edf1ef;
+}
+.factorsList dt {
+  color: #536964;
+}
+.factorsList dd {
+  margin: 0;
+  color: #263f3a;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.factorsList small {
+  grid-column: 1 / -1;
+  color: #71817d;
+  line-height: 1.45;
+}
 .excerpt {
   margin: 0;
   font-size: 12px;
