@@ -258,6 +258,17 @@ pendientes. La pantalla indica esta limitación y no presenta datos de ejemplo.
 - El uso de la Public Suffix List requiere una implementación mantenida y una política para actualizar sus datos; no se debe asumir que los dos últimos componentes separados por puntos identifican siempre el dominio registrable.
 - Los límites de página ayudan a acotar respuestas, pero no sustituyen los controles contra extracción masiva previstos por el ConOps.
 
+#### Acceso de lectura en la base de datos
+
+La migración `20261119100000_reports_public_read.sql` abre la lectura de `public.reports`, acordada en la revisión del contrato de evidencias (PR #13, respuesta 2), porque HU01-FL-07 establece que consultar información pública no requiere permisos de colaborador:
+
+- Política `reports_select_public` para `anon` y `authenticated`, sin condiciones: todavía no hay estados de reporte. Cuando la moderación los añada, la política deberá filtrar por ellos.
+- `anon` lee la proyección pública (`id`, `title`, `description`, `pattern_type`, `target_url`, `page_key`, `target_host`, `registrable_domain`, `created_at`), que es la que usa `GET /api/reports` con el cliente sin sesión; **no lee `author_id`**.
+- `authenticated` lee todas las columnas, incluido `author_id` (por ejemplo, para que HU-08 impida valorar el propio reporte). Las políticas de evidencias necesitan que pueda leer los reportes.
+- La escritura sigue revocada: crear, modificar o borrar reportes corresponde a HU-05.
+
+Queda abierto, como se indicó en la revisión de HU-01/T2, que `target_url` puede conservar la _query_ de la URL reportada; la proyección pública debería excluirla o HU-05 eliminarla al guardar.
+
 ## Validación e invalidación de reportes
 
 **Requisitos relacionados:** HU-08 (validar o invalidar un reporte), HU-10 (nivel de confianza y permisos) y HU-09 (credibilidad del reporte).
