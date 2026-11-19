@@ -132,8 +132,9 @@ create policy report_evidences_insert_own_active
     )
   );
 
--- Readable when not hidden and its report is readable; active admins see
--- every evidence so they can moderate it.
+-- Readable when not hidden and its report is readable. The uploader sees all
+-- of their own evidences (the Storage delete policy relies on it to tell
+-- registered objects apart) and active admins see every evidence to moderate.
 create policy report_evidences_select_visible
   on public.report_evidences for select to authenticated
   using (
@@ -143,6 +144,7 @@ create policy report_evidences_select_visible
         select 1 from public.reports r where r.id = report_id
       )
     )
+    or uploaded_by = (select auth.uid())
     or exists (
       select 1 from public.profiles p
       where p.id = (select auth.uid()) and p.is_active and p.role_code = 'admin'
