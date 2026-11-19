@@ -7,6 +7,12 @@ Este documento define el contrato HTTP, el formato de datos de entrada y salida,
 - **Reglas de validación compartidas:** `web/src/lib/reports/validation.ts`
 - **Tabla destino en PostgreSQL / Supabase:** `public.reports`
 
+La consulta pública `GET /api/reports` por página o dominio ya está implementada.
+La creación dispone de handler y modelo. El formulario todavía envía la petición sin
+Bearer y la BD de esta rama mantiene cerradas las inserciones de `reports`.
+HU-05 integrará `reports.create` junto con las reglas de la operación. Véanse
+el [contrato de consulta](../domain-design.md) y la [API de autorización](authorization.md).
+
 ---
 
 ## 1. Resumen del endpoint
@@ -60,7 +66,7 @@ El cuerpo de la petición debe ser un objeto JSON con los siguientes campos obli
 
 ```json
 {
-  "targetUrl": "[https://shop.example.co.uk/pricing?utm_source=campaign#plans](https://shop.example.co.uk/pricing?utm_source=campaign#plans)",
+  "targetUrl": "https://shop.example.co.uk/pricing?utm_source=campaign#plans",
   "category": "hidden_costs",
   "title": "Gastos de gestión obligatorios ocultos hasta el último paso",
   "description": "El precio mostrado en el catálogo no incluye una comisión fija del 15% que aparece únicamente al confirmar el pago.",
@@ -89,8 +95,8 @@ Antes de insertar el registro en `public.reports`, el servidor deriva y normaliz
     "title": "Gastos de gestión obligatorios ocultos hasta el último paso",
     "description": "El precio mostrado en el catálogo no incluye una comisión fija del 15% que aparece únicamente al confirmar el pago.\\n\\nPasos para reproducir:\\n1. Seleccionar cualquier producto.\\n2. Avanzar al resumen de compra.\\n3. Observar el recargo añadido automáticamente.",
     "pattern_type": "hidden_costs",
-    "target_url": "[https://shop.example.co.uk/pricing?utm_source=campaign#plans](https://shop.example.co.uk/pricing?utm_source=campaign#plans)",
-    "page_key": "[https://shop.example.co.uk/pricing](https://shop.example.co.uk/pricing)",
+    "target_url": "https://shop.example.co.uk/pricing?utm_source=campaign#plans",
+    "page_key": "https://shop.example.co.uk/pricing",
     "target_host": "shop.example.co.uk",
     "registrable_domain": "example.co.uk",
     "created_at": "2026-11-18T19:00:00.000Z"

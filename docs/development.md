@@ -1,6 +1,6 @@
 # Desarrollo del proyecto
 
-> Estado: guía de desarrollo del Sprint 1 (9-22 de noviembre de 2026), con infraestructura, perfiles y roles persistentes HU-14/T1–T2. HU-14/T3 y HU-11 siguen pendientes.
+> Sprint 1 (9–22 de noviembre de 2026). HU-14/T1–T3 proporciona perfiles, roles y autorización en PostgreSQL. HU-11 incorporará los flujos de sesión.
 
 ## Puesta en marcha y organización
 
@@ -41,9 +41,7 @@ su valor. No hay cliente privilegiado.
 
 `client-only` y `server-only` delimitan los módulos para Next.js. Las factorías
 usan `@supabase/supabase-js` con `persistSession`, `autoRefreshToken` y
-`detectSessionInUrl` desactivados. No transportan identidad del usuario ni leen
-cookies: no deben usarse como autorización. HU-11 sustituirá esta preparación
-sin estado por las utilidades de `@supabase/ssr` para App Router y resolverá el
+`detectSessionInUrl` desactivados. El cliente de servidor puede enviar el Bearer recibido y verificarlo con Auth. HU-11 incorporará las utilidades de `@supabase/ssr` para App Router y resolverá el
 flujo completo de cookies, validación y renovación. El
 [cliente SSR de Supabase](https://github.com/supabase/ssr/blob/main/src/createBrowserClient.ts)
 persiste sesiones mediante cookies; por eso no se instala anticipadamente.
@@ -68,17 +66,12 @@ El endpoint está descrito en la
 
 ### Comprobación manual de HU-05, HU-06 y HU-01
 
-HU-05/T5 añade pruebas de `prepareReportDraft`: URL web, campos obligatorios,
-límites de descripción y borrador normalizado. No prueban persistencia; HU-05 aún
-no tiene endpoint ni modelo. Para comprobar la interfaz, ejecutar `npm run dev:web`,
-abrir `http://localhost:3000` y usar **Crear reporte**. Un borrador válido indica
-que sigue en esta sesión; no crea un registro. En **Evidencias**, se seleccionan
-imágenes PNG, JPEG o WebP (sin PDF) con un estado por archivo; **Subir evidencias**
-sigue el flujo en dos pasos de HU-06/T4 para el reporte indicado en `?reporte=<uuid>`
-y permite reintentar los fallos temporales. Hasta HU-11 no hay sesión en el
-navegador, así que la subida pide iniciar sesión. **Consultar reportes** indica que la API sigue
-pendiente, sin inventar resultados. HU-01/T9 describe el contrato previsto en
-[domain-design.md](domain-design.md#hu-01t4-y-hu-01t9--interfaz-y-mecanismo-de-consulta).
+En `/reports/new`, el formulario valida los campos y envía JSON a `POST /api/reports`.
+El formulario todavía carece de sesión Bearer y el modelo SQL mantiene cerrada
+la inserción desde la API. El backend también implementa la consulta pública
+por página o dominio. El componente de selección valida imágenes PNG, JPEG y
+WebP antes de subirlas. HU-06/T4 implementa la subida firmada, la confirmación y la consulta en el servidor.
+En el panel de evidencias, `?reporte=<uuid>` identifica el destino. El cliente muestra el estado de cada imagen y permite reintentar fallos temporales. Para subir necesita la sesión de HU-11. La conexión del buscador visual sigue pendiente. Véanse el [dominio](domain-design.md) y la [API de reportes](api/reports.md).
 
 ### Pruebas y cobertura
 
@@ -99,7 +92,7 @@ sustituyen por módulos vacíos en las pruebas de clientes, porque Vitest no es 
 compilador de Next.js.
 
 La cobertura V8 incluye **todos los `.ts` de `web/src/lib/`, `web/src/server/` y
-`web/scripts/lib/`**, también si no los importa ninguna prueba; excluye únicamente
+`web/scripts/lib/`**, junto con las rutas de autorización en `app/api/me` y `app/api/admin`, también si no los importa ninguna prueba; excluye únicamente
 declaraciones `.d.ts` dentro de ese ámbito. Actualmente son:
 
 - `src/lib/supabase/config.ts`: validación y lectura diferida del entorno.
@@ -109,9 +102,11 @@ declaraciones `.d.ts` dentro de ese ámbito. Actualmente son:
 - `src/lib/evidences/upload.ts`: subida de evidencias en dos pasos desde el cliente (HU-06/T3).
 - `src/lib/supabase/session.ts`: token de la sesión del cliente de Supabase para la API.
 - `src/lib/reports/rules.ts`: validación del borrador de creación (HU-05/T5).
-- `src/server/supabase.ts`: factoría del servidor.
+- `src/lib/reports/validation.ts`, `src/lib/reports/query.ts` y `src/server/reports.ts`: contratos, validación, creación y búsqueda de reportes.
+- `src/server/supabase.ts`, `session.ts` y `authorization.ts`: cliente por petición, verificación Bearer y operaciones de permisos.
 - `src/server/evidences.ts`: endpoints de evidencias, autorización y compensación (HU-06/T4).
 - `src/server/evidence-images.ts`: recodificación de evidencias con `sharp` para eliminar metadatos (HU-06/T4).
+- Las rutas de evidencias bajo `src/app/api/reports/[reportId]/evidences/` se prueban desde Vitest. Su lógica de servidor entra en el ámbito de V8.
 - `scripts/lib/auth-health.ts`: petición y clasificación del diagnóstico.
 
 `src/server/profiles.ts` contiene únicamente los tipos `Profile`, `Role` y `RoleCode`; no tiene lógica
@@ -150,9 +145,7 @@ El catálogo `roles` contiene `collaborator`, `developer` y `admin`. Cada perfil
 tiene un `role_code` obligatorio con FK conservadora y default `collaborator`.
 La nueva migración conserva T1, rellena perfiles anteriores y amplía la función
 de fechas; no modifica el trigger de alta ni consume metadatos como autoridad.
-Solo hay lectura autenticada del catálogo y del propio perfil activo. No hay
-escritura pública ni operaciones de promoción. Permisos y auditoría quedan para
-T3; sesiones y autenticación, para HU-11. Las reglas HU-08/T1 se conservan.
+T3 conserva la lectura directa del catálogo de roles y del perfil propio activo. La [API administrativa](api/authorization.md) añade lecturas acotadas y mutaciones auditadas con autorización en BD. HU-11 resolverá las sesiones.
 
 ### Migraciones, perfiles y comprobaciones
 
@@ -212,6 +205,39 @@ conserva: su runner nuevo aplica T1 y T2 en orden y ejecuta todas las suites.
 Esta validación es local; no acredita una ejecución de GitHub Actions ni un
 despliegue remoto. El bloque funcional de HU-08/T1 permanece sin cambios.
 
+### Validación local de HU-14/T3 (19 de noviembre de 2026)
+
+Base `11a697a`, Node.js 24.15.0, npm 12.2.2 y Supabase CLI 3.1.0.
+
+`npm run check` superó formato, lint, tipos y compilación de web y extensión.
+Con el servidor compilado en loopback, los seis métodos de autorización
+respondieron `401 UNAUTHENTICATED` por HTTP ante la ausencia de Bearer.
+
+- `npm ci` instaló 494 paquetes. npm informó de siete avisos moderados y de la deprecación de ESLint 9.39.5. El primer intento en el sandbox de Windows falló al crear el enlace del workspace. La instalación autorizada terminó correctamente.
+- `npm test` y `npm run test:coverage` pasaron 230 pruebas en diez archivos. V8 midió 432/434 sentencias, 341/345 ramas, 76/76 funciones y 410/412 líneas. Cada archivo ejecutable superó el 80 % en las cuatro métricas. Los módulos nuevos de autorización y sesión alcanzaron el 100 %.
+- `npm run supabase:start` aplicó las siete migraciones a un PostgreSQL 17 nuevo. `migration list` mostró las siete versiones y `migration up` devolvió cero pendientes. No había un volumen anterior del proyecto. La suite incremental reprodujo el SQL real de T3 sobre perfiles anteriores y comparó atributos, fechas y roles.
+- `npm run test:db` pasó 756 aserciones en 18 archivos. Incluye los bloqueos de la fila común y del actor, la reversión por fallo de auditoría, los accesos directos como roles de API y las regresiones de reportes, evidencias y valoraciones.
+- En PostgREST local, un Bearer efímero de sujeto sin perfil obtuvo `200 null` en la consulta propia y `403` en las cuatro RPC administrativas. Los casos positivos de administración se verificaron en pgTAP y en los handlers con el SDK simulado.
+- `db lint --schema public,private,authorization_internal --fail-on warning` y `db advisors --type security --fail-on error` devolvieron listas vacías. `npm run supabase:stop` detuvo el proyecto conservando los volúmenes.
+
+El [informe de T-CTRL-02](qa/reporte-pruebas-metricas.md) conserva la medición de su semana y commit.
+
+### Verificación conjunta de HU-14/T3 y HU-06 (19 de noviembre de 2026)
+
+La rama T3 partía de `269b384`. La validación conjunta usa `main` en `8c8c6c4`:
+incluye el servidor y Storage de #23 (`159dad9`) y el cliente de subida de #25.
+
+| Comprobación local   | Resultado del árbol integrado                                                                                                                                                                                                                                                                                 |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Dependencias y build | `npm ci` instaló el lockfile de #23, que #25 conserva. npm informó de siete avisos moderados. `npm run check` pasó formato, ESLint, tipos y compilación de web y extensión. Un primer build de Turbopack falló al crear una junction dentro del sandbox de Windows. El check completo pasó fuera del sandbox. |
+| Vitest y V8          | `npm test` y `npm run test:coverage`: 333 pruebas en 13 archivos. Sentencias 721/727 (99,17 %), ramas 545/564 (96,63 %), funciones 115/117 (98,29 %) y líneas 675/680 (99,26 %). Todos los archivos ejecutables superaron el umbral por archivo.                                                              |
+| Migraciones          | Un proyecto local independiente con Storage habilitado aplicó las ocho migraciones en PostgreSQL 17 desde una base nueva. `migration list` confirmó la secuencia completa y `migration up` devolvió cero pendientes.                                                                                          |
+| pgTAP                | `npm run test:db`: 782 aserciones correctas en 19 suites. Cubren las políticas del bucket, las RPC y la auditoría RBAC, y las reconstrucciones históricas de perfiles, reportes y roles.                                                                                                                      |
+| Lint y seguridad SQL | `db lint --schema public,private,authorization_internal --fail-on warning` y `db advisors --type security --fail-on error` devolvieron cero hallazgos en la instancia local.                                                                                                                                  |
+
+La aplicación de `evidences.add` a las rutas y políticas de HU-06 sigue pendiente.
+Estas pruebas corresponden al árbol local de integración.
+
 ### Dependencias de herramientas
 
 Las versiones exactas se encuentran en los `package.json` y el lockfile; en el esqueleto se fijaron TypeScript 5.9.3 y ESLint 9.39.5 para mantener la compatibilidad con la cadena de plugins utilizada. La auditoría inicial consignó ocho avisos moderados en dependencias de desarrollo relacionados con `minimatch`, y ninguno en la ejecución realizada con `npm audit --omit=dev`. No se ejecutó `npm audit fix --force` porque proponía retrocesos incompatibles. **Estos resultados son históricos, no una auditoría nueva ni una garantía de seguridad.** Revisar [GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249) y compatibilidad con ESLint 10 en las futuras actualizaciones.
@@ -228,7 +254,7 @@ El Sprint 1 se planificó del **9 al 22 de noviembre de 2026** con **ocho HU y 4
 
 | HU                                 | Área de trabajo prevista            | Dependencia o acuerdo inicial                                           |
 | ---------------------------------- | ----------------------------------- | ----------------------------------------------------------------------- |
-| HU-14 — Usuarios, roles y permisos | Servidor y migraciones              | T1 y T2 implementan perfil y roles; T3 definirá permisos                |
+| HU-14 — Usuarios, roles y permisos | Servidor y migraciones              | T1–T3 implementan perfil, rol, permisos y administración auditada       |
 | HU-11 — Acceso del colaborador     | Web, servidor y autenticación       | Resolver sesiones y acceso autorizado para habilitar HU-05              |
 | HU-05 — Crear reportes             | Interfaz, API, servidor y datos     | Definir estructura y errores de los reportes antes de consumirlos       |
 | HU-06 — Evidencias                 | Interfaz, servidor y almacenamiento | Investigar servicio, límites y control de acceso a archivos             |

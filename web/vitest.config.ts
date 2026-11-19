@@ -13,7 +13,13 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'lcov', 'json-summary'],
-      include: ['src/lib/**/*.ts', 'src/server/**/*.ts', 'scripts/lib/**/*.ts'],
+      include: [
+        'src/lib/**/*.ts',
+        'src/server/**/*.ts',
+        'scripts/lib/**/*.ts',
+        'src/app/api/admin/**/route.ts',
+        'src/app/api/me/**/route.ts',
+      ],
       exclude: ['**/*.d.ts'],
       thresholds: {
         perFile: true,

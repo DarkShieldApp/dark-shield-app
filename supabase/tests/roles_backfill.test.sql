@@ -13,6 +13,8 @@ drop policy report_evidences_objects_delete_own_unregistered on storage.objects;
 -- The later HU-06 admin policies read role_code: remove that table only
 -- within this historical replay.
 drop table public.report_evidences;
+-- The T3 assignment FK references roles; this replay rolls the drop back.
+drop table public.role_permissions;
 alter table public.profiles drop column role_code;
 drop table public.roles;
 -- Restore the historical timestamp function from the actual T1 statements.

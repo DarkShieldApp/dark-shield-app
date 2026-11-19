@@ -6,9 +6,18 @@ Los handlers validan la entrada y la identidad del usuario y delegan las reglas 
 
 ## Endpoints disponibles
 
-| Método | Ruta                                        | Descripción                                                                                                  | Especificación                                             |
-| :----- | :------------------------------------------ | :----------------------------------------------------------------------------------------------------------- | :--------------------------------------------------------- |
-| `POST` | `/api/reports`                              | Crea y persiste un nuevo reporte de _dark pattern_ asociado a un colaborador autenticado y activo (`HU-05`). | [docs/api/reports.md](../../../../docs/api/reports.md)     |
-| `POST` | `/api/reports/{reportId}/evidences/uploads` | Paso 1 de la subida de evidencias: valida lo declarado y devuelve URL firmadas de Storage (`HU-06`).         | [docs/api/evidences.md](../../../../docs/api/evidences.md) |
-| `POST` | `/api/reports/{reportId}/evidences`         | Paso 3: confirma la subida, elimina los metadatos y registra la evidencia (`HU-06`).                         | [docs/api/evidences.md](../../../../docs/api/evidences.md) |
-| `GET`  | `/api/reports/{reportId}/evidences`         | Evidencias legibles de un reporte con URL firmadas de lectura (`HU-06`).                                     | [docs/api/evidences.md](../../../../docs/api/evidences.md) |
+| Método      | Ruta                                                       | Uso                                                                                                       |
+| ----------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| GET         | `/api/reports`                                             | Consulta pública por página o dominio                                                                     |
+| POST        | `/api/reports`                                             | Creación con perfil activo y Bearer. La sesión del formulario y el permiso de inserción están pendientes. |
+| POST        | `/api/reports/{reportId}/evidences/uploads`                | Perfil activo. Valida la declaración y firma la subida directa a Storage.                                 |
+| POST        | `/api/reports/{reportId}/evidences`                        | Perfil activo. Confirma, recodifica la imagen y registra la evidencia.                                    |
+| GET         | `/api/reports/{reportId}/evidences`                        | Sesión Bearer. Lista las evidencias legibles según RLS con URL firmadas.                                  |
+| GET         | `/api/me/permissions`                                      | Rol y permisos base actuales                                                                              |
+| GET         | `/api/admin/users`                                         | Página de perfiles                                                                                        |
+| PATCH       | `/api/admin/users/{id}/role`                               | Rol de otra cuenta                                                                                        |
+| GET         | `/api/admin/roles/permissions`                             | Catálogo y matriz                                                                                         |
+| PUT, DELETE | `/api/admin/roles/{roleCode}/permissions/{permissionCode}` | Conceder o revocar una asignación                                                                         |
+
+Los contratos detallan la autenticación, la validación y los errores de cada operación.
+Véanse [reportes](../../../../docs/api/reports.md), [evidencias](../../../../docs/api/evidences.md) y [autorización](../../../../docs/api/authorization.md).

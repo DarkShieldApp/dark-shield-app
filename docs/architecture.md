@@ -1,6 +1,6 @@
 # Arquitectura de DarkShield
 
-> Estado: arquitectura inicial con infraestructura Supabase, perfiles y roles HU-14/T1–T2 (11 de noviembre de 2026). T3 y los flujos de HU-11 siguen pendientes.
+> Sprint 1. El servidor expone reportes y autorización HU-14/T3. El flujo de sesión web y extensión corresponde a HU-11.
 
 ## Visión general
 
@@ -10,7 +10,7 @@ La solución prevista conserva los componentes lógicos del ConOps: plataforma w
 
 | Componente                   | Tecnología elegida                       | Función                                                            |
 | ---------------------------- | ---------------------------------------- | ------------------------------------------------------------------ |
-| Web y servidor HTTP (`web/`) | Next.js, React y TypeScript              | Interfaz web, futuros endpoints y lógica del servidor              |
+| Web y servidor HTTP (`web/`) | Next.js, React y TypeScript              | Interfaz web, endpoints HTTP y lógica del servidor                 |
 | Extensión (`extension/`)     | WXT, React, TypeScript y Manifest V3     | Cliente de navegador; actualmente solo dispone del popup inicial   |
 | Persistencia (`supabase/`)   | Supabase / PostgreSQL y Supabase Auth    | Perfiles vinculados a Auth, migración, triggers, RLS y pruebas SQL |
 | IA auxiliar                  | Sin implementación ni proveedor decidido | Análisis y estructuración de reportes cuando se aborden sus HU     |
@@ -33,19 +33,19 @@ flowchart LR
 
 ### Responsabilidades
 
-- **`web/src/app/`**: páginas, layouts y futuros _Route Handlers_ en `web/src/app/api/`. Las operaciones compartidas por web y extensión deberán tener un contrato HTTP claro.
-- **`web/src/server/`**: contiene la factoría Supabase marcada con `server-only` y los tipos persistidos `Profile`, `Role` y `RoleCode`; albergará autorización y reglas del dominio. El cliente no debe ser la autoridad sobre roles, permisos, credibilidad o confianza.
+- **`web/src/app/`**: páginas, layouts y _Route Handlers_ en `web/src/app/api/`. Las operaciones compartidas por web y extensión deberán tener un contrato HTTP claro.
+- **`web/src/server/`**: contiene la factoría Supabase marcada con `server-only` y los tipos persistidos `Profile`, `Role` y `RoleCode`; implementa autorización y operaciones de reportes. El cliente no debe ser la autoridad sobre roles, permisos, credibilidad o confianza.
 - **`web/src/lib/supabase/`**: validación compartida y factoría de navegador marcada con `client-only`. Se valida al crear cada cliente, sin instancias globales ni acceso a red en la importación. Ambas factorías usan únicamente la clave publicable y desactivan persistencia, renovación y detección de sesiones en URL.
 - **`extension/src/entrypoints/`**: hoy contiene el popup. Un _background/service worker_ y los permisos necesarios se estudiarán cuando se implementen HU-17 o HU-03. No existen actualmente consultas ni alertas reales.
-- **`supabase/migrations/`**: contiene las migraciones de `public.profiles` y `public.roles`, funciones privadas, triggers y políticas de lectura propia activa y del catálogo autenticado. `supabase/tests/` verifica integridad y RLS con PostgreSQL real.
+- **`supabase/migrations/`**: versiona perfiles, roles, reportes, evidencias, valoraciones y permisos con sus controles de acceso. `supabase/tests/` verifica integridad y RLS con PostgreSQL real.
 
 Cuando ambos clientes necesiten reutilizar un contrato, se podrá incorporar `packages/contracts/` para los tipos o esquemas acordados. **No se crea todavía**: las entidades y formatos de intercambio deben surgir de las tareas de diseño, y TypeScript no sustituye la validación de datos recibidos por HTTP.
 
 ## Límites de integración y seguridad
 
 - El servidor concentrará las operaciones de negocio que requieran autorización, cálculo de confianza/credibilidad, moderación, control de abuso o coordinación con la IA.
-- Supabase Auth está adoptado. HU-11 resolverá sesiones en web y extensión, cookies SSR, verificación de identidad y renovación. No hay proxy de autenticación ni rutas protegidas. También siguen pendientes CORS, contratos HTTP, permisos de origen, acceso a evidencias y RLS de futuras entidades.
-- `auth.users` conserva la identidad y `public.profiles` sus datos de dominio con el mismo UUID. Un trigger privado crea el perfil sin copiar metadatos; la FK `ON DELETE RESTRICT` impide el borrado accidental en cascada. La API permite únicamente leer el perfil propio activo. `is_active` no revoca sesiones ni protege por sí solo futuras tablas o endpoints: deberán comprobarlo según sus requisitos.
+- Supabase Auth está adoptado. HU-11 resolverá sesiones en web y extensión, cookies SSR, verificación de identidad y renovación. Los handlers protegidos verifican Bearer con Auth. HU-06 implementa la subida firmada, confirmación y consulta de evidencias en Storage. Siguen pendientes el proxy SSR y CORS para la extensión.
+- `auth.users` conserva la identidad y `public.profiles` sus datos de dominio con el mismo UUID. Un trigger privado crea el perfil sin copiar metadatos; la FK `ON DELETE RESTRICT` impide el borrado accidental en cascada. La lectura directa de perfiles se limita al propio activo. La RPC administrativa ofrece una proyección mínima paginada. `is_active` no revoca sesiones ni protege por sí solo futuras tablas o endpoints: deberán comprobarlo según sus requisitos.
 - No se colocarán claves privilegiadas de Supabase ni secretos de IA en el navegador, la extensión o variables expuestas al cliente. Las comprobaciones de permisos se harán en el servidor y, donde proceda, también en la base de datos.
 - La extensión no tiene actualmente `host_permissions` ni `content_scripts` en su versión de producción. Consultar la pestaña mediante una acción del usuario y observar la navegación en segundo plano presentan requisitos de permisos distintos; no se habilitará acceso global sin una necesidad justificada.
 - Los reportes son **alegaciones que deben evaluarse**, no confirmaciones automáticas. La credibilidad cambiará con nueva evidencia y participación; la IA es apoyo a la comunidad y a la moderación.
@@ -70,6 +70,6 @@ Son decisiones de arranque revisables; no implican que las HU correspondientes e
 
 ## Trabajo todavía no definido o implementado
 
-Están implementados el perfil de T1 y el catálogo con rol principal único de T2. No conceden capacidades implícitas: T3 definirá permisos acumulativos, cambio administrativo de roles y auditoría. Siguen pendientes permisos y administración (T3), las restantes entidades y sus migraciones/RLS, acceso a evidencias, autenticación, sesiones, contratos API, cálculo de credibilidad, integración con IA, pruebas de esos flujos y permisos de navegador. Tampoco se han elegido un ORM, colas, servicio independiente de IA ni un sistema adicional de orquestación del monorepositorio: no existe aún una necesidad que los justifique.
+La [API de autorización](api/authorization.md) entrega permisos base actuales y cambios auditados. La integración con las reglas de reportes, evidencias y valoraciones corresponde a sus HU. Quedan pendientes sesiones, confianza y credibilidad, IA y permisos de navegador.
 
 El [diseño del dominio](domain-design.md) recoge expresamente lo que falta por definir; el [documento de desarrollo](development.md) conserva la organización del Sprint 1, los criterios de trabajo y las discrepancias entre fuentes. El [README](../README.md) contiene los comandos de instalación y arranque.

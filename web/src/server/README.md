@@ -17,9 +17,17 @@ servidor. Refleja la fila SQL, con UUID y fechas como cadenas JSON; no valida
 entradas ni crea un cliente, servicio CRUD o sesión. Mantenerlo alineado con las
 migraciones. La integridad y la autorización inicial se verifican en PostgreSQL.
 
+La factoría de servidor recibe opcionalmente un Bearer. `session.ts` verifica su identidad
+con `getUser(token)`. Reportes y autorización comparten esa comprobación. Las rutas
+de permisos delegan en `authorization.ts`, que valida la entrada, comprueba el permiso
+base y llama a PostgreSQL con el mismo cliente. Las RPC administrativas vuelven a
+comprobar al actor. Véase el [contrato de autorización](../../../docs/api/authorization.md).
+
+`reports.ts` crea y consulta reportes. Reexporta la factoría Bearer y conserva los cursores que utiliza HU-06. Véase el [contrato de reportes](../../../docs/api/reports.md).
+
 `evidences.ts` implementa la API de evidencias de HU-06/T4 (subida directa en dos
 pasos, confirmación y lectura) con el token Bearer del usuario y la RLS como
-autoridad; `evidence-images.ts` recodifica las imágenes con `sharp` para eliminar
+autoridad. Si falla la confirmación, el servidor intenta retirar los objetos escritos como compensación. El módulo `evidence-images.ts` recodifica las imágenes con `sharp` para eliminar
 metadatos. Contrato en [docs/api/evidences.md](../../../docs/api/evidences.md).
 
 Todavía no hay sesiones con cookies en Next.js. Uso y límites de

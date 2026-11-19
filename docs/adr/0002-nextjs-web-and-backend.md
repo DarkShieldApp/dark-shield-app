@@ -9,7 +9,7 @@ La plataforma necesita una interfaz React, operaciones HTTP para web y extensió
 
 ## Decisión
 
-Usar **Next.js con App Router, React y TypeScript** en `web/` para la interfaz y el futuro backend. Situar páginas y _Route Handlers_ en `web/src/app/` (los endpoints bajo `app/api/`) y reservar `web/src/server/` para lógica de negocio, autorización e integraciones. La aplicación requerirá un runtime servidor cuando tenga API; no se desplegará como exportación estática para las funcionalidades de negocio.
+Usar **Next.js con App Router, React y TypeScript** en `web/` para la interfaz y el backend. Situar páginas y _Route Handlers_ en `web/src/app/` (los endpoints bajo `app/api/`) y reservar `web/src/server/` para lógica de negocio, autorización e integraciones. Las rutas HTTP requieren un runtime de servidor.
 
 ## Alternativas y consecuencias
 
@@ -17,6 +17,6 @@ Usar **Next.js con App Router, React y TypeScript** en `web/` para la interfaz y
 - **Usar Supabase como única API de negocio para todos los clientes:** no es adecuado como planteamiento general para toda la lógica de confianza, valoración, moderación, límites de abuso e IA descrita en el ConOps.
 - **Crear un servicio independiente de IA desde el principio:** sería prematuro sin necesidades de carga, colas o aislamiento confirmadas.
 
-Se aceptan las convenciones y dependencia de Next.js a cambio de reducir la configuración propia. **No hay todavía endpoints ni operaciones de negocio en Next.js**. HU-14/T1 incorpora el perfil persistente en PostgreSQL y su tipo TypeScript de servidor. La extensión deberá comunicarse por contratos HTTP acordados; autenticación, CORS y sesiones siguen pendientes.
+Se aceptan las convenciones y dependencia de Next.js a cambio de reducir la configuración propia. El servidor ofrece [reportes](../api/reports.md) y [autorización](../api/authorization.md). La extensión consumirá estos contratos al integrar sesiones y CORS.
 
 **Referencia:** [arquitectura general](../architecture.md).

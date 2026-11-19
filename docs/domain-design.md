@@ -1,7 +1,6 @@
 # Diseño del dominio
 
-HU-14/T1 implementa el perfil y T2 su rol principal persistente. T3 (permisos)
-sigue pendiente; estas tareas no completan la historia HU-14.
+HU-14/T1 implementa el perfil, T2 su rol principal y T3 los permisos base y las operaciones administrativas auditadas.
 
 ## Identidad y perfil
 
@@ -49,16 +48,25 @@ de fechas incluye `role_code` entre los cambios efectivos.
 
 Son roles de aplicación, distintos de los roles PostgreSQL/Supabase o permisos
 de GitHub. El consumidor sin cuenta del ConOps no es un cuarto rol persistente.
-No hay jerarquía ni exclusión de capacidades: administradores y desarrolladores
-podrán colaborar si T3 les concede los permisos correspondientes. Leer el catálogo
-o tener un código de rol no autoriza ninguna acción por sí mismo.
 
-RLS y ACL permiten a `authenticated` únicamente leer el catálogo público. `anon`
-no tiene acceso; no hay escritura pública sobre roles ni perfiles, ni RPC de
-administración. El propietario SQL gestiona las migraciones. T3 definirá la
-matriz de permisos, autorización, capacidades acumulativas, cambio administrativo
-de roles y auditoría. HU-11 resolverá registro, login, sesiones, cookies y rutas;
-HU-10/HU-08 concretarán confianza efectiva, umbrales y validaciones autorizadas.
+## Permisos base y administración (HU-14/T3)
+
+| Permiso                    | collaborator | developer | admin |
+| -------------------------- | ------------ | --------- | ----- |
+| `reports.create`           | Sí           | Sí        | Sí    |
+| `evidences.add`            | Sí           | Sí        | Sí    |
+| `assessments.submit`       | Sí           | Sí        | Sí    |
+| `users.read`               | —            | —         | Sí    |
+| `users.change_role`        | —            | —         | Sí    |
+| `roles.manage_permissions` | —            | —         | Sí    |
+
+Cada fila representa una asignación explícita de la matriz inicial. El alta conserva
+el rol `collaborator`. Una operación consulta el perfil activo y las asignaciones
+vigentes en PostgreSQL. Las tres capacidades administrativas son fijas.
+Un administrador activo puede cambiar el rol de otro perfil o las asignaciones de
+colaboración. Cada cambio efectivo registra el actor, objetivo y transición
+en la misma transacción. Véanse los [contratos HTTP y por HU](api/authorization.md)
+y la [decisión de persistencia](adr/0004-supabase-persistence.md).
 
 ## Confianza y estado de cuenta
 
@@ -247,14 +255,12 @@ lista vacía. Los datos de la respuesta se renderizan como reportes comunicados,
 sin inferir credibilidad cuando el campo no esté disponible.
 
 **Estado de implementación:** HU-01/T4 aporta la estructura visual del buscador,
-la navegación y los estados iniciales. El endpoint, los resultados, los filtros
-de ámbito y la paginación requieren HU-01/T3 y el modelo de HU-05 y permanecen
-pendientes. La pantalla indica esta limitación y no presenta datos de ejemplo.
+la navegación y los estados iniciales. El handler GET ya implementa búsqueda, selección de ámbito y paginación contra el modelo de HU-05. La conexión de la pantalla de consulta con ese handler sigue pendiente.
 
 #### Integración y decisiones de implementación
 
 - HU-05 debe hacer consultable la página afectada por cada reporte con la clave definida aquí; la forma de persistir y derivar esa clave se resuelve al diseñar el modelo de reportes.
-- HU-01/T3 implementa la validación, búsqueda, paginación y proyección; HU-01/T4 consume el contrato desde la interfaz. La extensión seguirá este contrato cuando HU-17 entre en alcance.
+- El servidor implementa validación, búsqueda, paginación y proyección. Conectar el buscador de HU-01/T4 con ese contrato sigue pendiente. La extensión lo consumirá al abordar HU-17.
 - El uso de la Public Suffix List requiere una implementación mantenida y una política para actualizar sus datos; no se debe asumir que los dos últimos componentes separados por puntos identifican siempre el dominio registrable.
 - Los límites de página ayudan a acotar respuestas, pero no sustituyen los controles contra extracción masiva previstos por el ConOps.
 
@@ -441,7 +447,7 @@ Los códigos son estables: T3 y T4 deben reutilizarlos en la interfaz y en la AP
 - `removeFromEvidenceSelection(selection, key)` quita un archivo y reclasifica el resto.
 - Cada elemento de `selection.items` tiene `status: 'accepted'` con la evidencia normalizada o `status: 'rejected'` con el código de `rules.ts`. Los rechazados se conservan para mostrar el motivo hasta que el usuario los quite.
 - **El límite `EVIDENCE_MAX_FILES` se aplica después de validar.** Solo cuentan los archivos aceptados, en orden de selección: un archivo rechazado no ocupa hueco ni hace perder uno válido. Un archivo válido que supere el máximo se marca con `EVIDENCE_TOO_MANY` y pasa a aceptado si se quita otro. No se recorta la lista antes de validar, porque así podía perderse un archivo válido cuando el primero era rechazado (caso de seis archivos cubierto por las pruebas).
-- `evidenceSubmission(selection)` devuelve los archivos aceptados y el resultado de `validateEvidenceBatch` sobre ellos: lo que enviaría la futura subida y la misma comprobación que repetirá el servidor.
+- `evidenceSubmission(selection)` devuelve los archivos aceptados y el resultado de `validateEvidenceBatch` sobre ellos. Al confirmar una subida, el servidor valida los bytes recibidos y vuelve a comprobar la imagen recodificada.
 - `EVIDENCE_ERROR_MESSAGES` es un `Record<EvidenceErrorCode, string>` con mensajes en español. TypeScript obliga a cubrir cada código nuevo, y las cifras y tipos se derivan de `EVIDENCE_MAX_FILE_BYTES`, `EVIDENCE_MAX_FILES` y `ALLOWED_EVIDENCE_TYPES`.
 
 `validateEvidenceBatch` no se usa directamente sobre lo seleccionado porque rechaza el envío completo (`index: null`) cuando hay más de `EVIDENCE_MAX_FILES` archivos y, por tanto, no da un resultado por archivo.
@@ -459,11 +465,13 @@ La interfaz de HU-06/T2 (`dashboard.tsx`) usa ahora `selection.ts` y `upload.ts`
 
 ### Fuera del alcance de T6
 
-Comprobar la firma no garantiza que el archivo sea inocuo. Quedan pendientes, para las tareas correspondientes de HU-06: análisis antivirus, recodificación o eliminación de metadatos de imágenes, nombre de almacenamiento generado por el servidor (no usar el nombre del cliente como ruta), servicio y _bucket_ de almacenamiento (Supabase Storage sigue siendo la opción del [ADR-004](adr/0004-supabase-persistence.md)), control de acceso y relación de cada evidencia con su reporte y su autor.
+Comprobar la firma no garantiza que el archivo sea inocuo. El análisis antivirus sigue pendiente. En T4, el servidor genera los nombres, valida y recodifica las imágenes al confirmar la subida al bucket privado. El modelo HU-06/T4a ya vincula cada evidencia con su reporte y autor.
 
 ### Contrato de persistencia y API (HU-06/T4)
 
-**Estado:** acordado en la revisión de la PR #13 (19 de noviembre de 2026): preguntas 1–4 con Gregorio (HU-05/T4), 5–7 con Ildefonso (HU-06/T1 y HU-11) y 8–11 con Iván (HU-09/T2 y PO). La eliminación de metadatos con la subida directa se cerró después: el servidor recodifica la imagen con `sharp` al confirmar (ver más abajo). Implementado en tres piezas: el modelo y su RLS (HU-06/T4a), la lectura pública de reportes (respuesta 2, aparte porque toca HU-05/T4) y el endpoint con el _bucket_ y sus políticas (HU-06/T4), especificado en [docs/api/evidences.md](api/evidences.md).
+**Estado:** acordado en la revisión de la PR #13 (19 de noviembre de 2026): preguntas 1–4 con Gregorio (HU-05/T4), 5–7 con Ildefonso (HU-06/T1 y HU-11) y 8–11 con Iván (HU-09/T2 y PO). La eliminación de metadatos con la subida directa se cerró después: el servidor recodifica la imagen con `sharp` al confirmar (ver más abajo). Implementado en tres piezas: el modelo y su RLS (HU-06/T4a), la lectura pública de reportes (respuesta 2, integrada en la PR #21) y el endpoint con el _bucket_ y sus políticas (HU-06/T4), especificado en [docs/api/evidences.md](api/evidences.md).
+
+T3 define el permiso base `evidences.add`. Los handlers, la RLS y las políticas de Storage de HU-06/T4 todavía no consultan esa asignación. Revocarla por sí sola deja vigente el acceso que esas reglas conceden.
 
 #### Decisiones
 
@@ -502,7 +510,7 @@ Migración del endpoint: `insert into storage.buckets` de `report-evidences` con
 
 1. **Pedir las URL de subida.** `POST /api/reports/{reportId}/evidences/uploads` con `{ "files": [{ "name": "captura.png", "type": "image/png", "size": 48211 }] }` (de 1 a 5 archivos).
    - El servidor comprueba la sesión (401), el perfil activo (403) y que el reporte sea legible (404).
-   - Valida con `rules.ts` lo declarado: nombre, extensión, MIME y tamaño. La firma se comprueba en el paso 2, con los bytes reales.
+   - Valida con `rules.ts` lo declarado: nombre, extensión, MIME y tamaño. La firma se comprueba al confirmar, con los bytes reales.
    - Comprueba que el colaborador no supere 5 evidencias en el reporte contando las ya guardadas; el _trigger_ es la garantía final.
    - Por cada archivo genera un `uploadId` (UUID) y la ruta `{user_id}/{reportId}/{uploadId}.{ext}`, y llama a `createSignedUploadUrl(ruta)` sin `upsert`.
    - Responde `201` con `{ "uploads": [{ "uploadId", "path", "token", "signedUrl" }] }`, en el mismo orden que `files`.
@@ -512,7 +520,7 @@ Migración del endpoint: `insert into storage.buckets` de `report-evidences` con
    - Reconstruye la ruta a partir del usuario, del reporte, del `uploadId` y de la extensión de `originalName`; nunca acepta una ruta del cliente.
    - Si el objeto no existe: `400 EVIDENCE_UPLOAD_MISSING`.
    - Descarga el objeto y valida con `validateEvidenceFile` usando su tamaño real y sus primeros bytes. Si no es válido, borra el objeto y responde `400 EVIDENCE_REJECTED`.
-   - Calcula `sha256` e inserta la fila con `id = uploadId`. Si la inserción falla, borra el objeto: el _trigger_ del límite da `400 EVIDENCE_REJECTED` (`EVIDENCE_TOO_MANY`), el contenido repetido da `409 EVIDENCE_DUPLICATE` y cualquier otro fallo, `500 EVIDENCE_PERSISTENCE_FAILED`.
+   - Recodifica la imagen con `sharp`, valida la copia limpia y la guarda bajo un nuevo `evidenceId`. Calcula el `sha256` de esa copia e inserta la fila con `id = evidenceId`. Tras registrar la evidencia, retira el original. Si la inserción falla, intenta borrar ambos objetos: el _trigger_ del límite da `400 EVIDENCE_REJECTED` (`EVIDENCE_TOO_MANY`), el contenido repetido da `409 EVIDENCE_DUPLICATE` y cualquier otro fallo, `500 EVIDENCE_PERSISTENCE_FAILED`.
    - Responde `201` con `{ "evidence": { "id", "reportId", "originalName", "mimeType", "sizeBytes", "moderationStatus", "createdAt" } }`.
    - **Punto de enganche de la T5:** después de la inserción y antes de responder, en un `try/catch` que registre el error sin cambiar el `201`. La T5 no se implementa hasta que HU-09/T2 esté en `main`.
 

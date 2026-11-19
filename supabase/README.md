@@ -2,7 +2,7 @@
 
 Supabase/PostgreSQL y Supabase Auth son las tecnologías adoptadas. HU-14/T1
 incorpora `public.profiles`, su primera migración, triggers, RLS y pruebas reales.
-T2 añade `public.roles` y un rol principal obligatorio por perfil.
+T2 añade `public.roles` y un rol principal obligatorio por perfil. T3 añade permisos base y administración auditada.
 Las factorías web siguen sin estado. Registro, login, logout, cookies y sesiones
 pertenecen a HU-11 y todavía no están implementados.
 
@@ -16,7 +16,7 @@ claves administrativas ni contraseñas remotas en código o Git.
 `/auth/v1/health`. Su resultado demuestra disponibilidad de Auth, no el modelo ni
 RLS. No crea usuarios ni sesiones y no se ejecuta en CI o build.
 
-Las migraciones de T1/T2 están versionadas para validación local. Esta tarea no
+Las migraciones del dominio están versionadas para validación local. Esta tarea no
 las aplica al proyecto remoto compartido; su estado debe comprobarse antes del despliegue. El remoto utiliza PostgreSQL 17.
 
 ## Instancia local y migraciones
@@ -26,7 +26,7 @@ local usa PostgreSQL 17, API, Auth, Studio, correo local y Storage (HU-06/T4:
 _bucket_ privado `report-evidences`, creado por migración, y sus políticas de
 `storage.objects`, que prueba `report_evidences_storage.test.sql`). Realtime,
 Edge Functions y Analytics están desactivados, al igual que el registro público.
-No hay archivos seed; los tres roles se siembran en la propia migración T2. La CLI v3 usa el entorno local por defecto; los comandos de esta
+No hay archivos seed; T2 siembra los roles y T3 los seis permisos y sus doce asignaciones iniciales. La CLI v3 usa el entorno local por defecto; los comandos de esta
 sección no llevan `--remote` y no necesitan login ni enlazar el proyecto remoto.
 
 Requisitos: Node.js 24, npm 11 o 12, Docker con motor Linux y puertos 54320–54324
@@ -113,8 +113,43 @@ El catálogo tiene RLS explícita; se revocan los grants de `PUBLIC`, `anon`,
 `authenticated` y `service_role`, concediendo solo SELECT a `authenticated`
 con política explícita. La política del perfil propio activo no cambia y no hay
 escrituras públicas, ni de tabla ni de columna. Leer roles no concede capacidades.
-T3 definirá permisos, capacidades acumulativas, cambio administrativo y auditoría;
-HU-11 resolverá sesiones. El consumidor sin cuenta no es un rol persistente.
+
+## Autorización administrativa (HU-14/T3)
+
+La [migración T3](migrations/20261119104009_role_permissions.sql) ocupa el séptimo lugar de las ocho migraciones.
+La octava, [bucket de evidencias](migrations/20261119120000_create_report_evidences_bucket.sql), crea el bucket privado y sus tres políticas de Storage. La PK compuesta de `role_permissions` cubre la búsqueda por rol y
+evita duplicados. Las FK restringen cambios en los catálogos. Son seis códigos y un máximo
+de doce asignaciones iniciales, por lo que el índice de la PK basta para estas consultas.
+
+RLS está habilitada sin políticas de acceso directo sobre `permissions`,
+`role_permissions` y `private.authorization_audit`. Los clientes carecen de grants
+sobre ellas, también `service_role`. Solo `authenticated` recibe EXECUTE en las cinco RPC
+públicas y sus implementaciones de `authorization_internal`. Este esquema tiene USAGE
+limitado y queda fuera de `api.schemas`. Los dos helpers de comprobación son internos
+al propietario. Mantener también `private` fuera de los esquemas expuestos.
+
+El cambio de rol y la modificación de asignaciones toman un bloqueo sobre la fila del
+rol admin, revalidan el perfil del actor con `FOR SHARE` y rechazan cambios del rol propio.
+Un segundo administrador que haya perdido el rol durante la espera ya no puede completar
+la operación. La ruta no cambia actividad ni confianza. La mutación y su auditoría forman
+una única transacción. El registro conserva los UUID históricos, las transiciones y la hora
+de PostgreSQL. Los códigos y asignaciones iniciales cambian mediante migraciones deliberadas.
+El contrato de [autorización](../docs/api/authorization.md) describe las asignaciones editables.
+
+### Primera cuenta administradora (operación posterior pendiente)
+
+Una instalación nueva admite cero administradores. Tras el alta real de Auth, el operador SQL
+autorizado verificará el proyecto, la identidad y el perfil activo por UUID. En una transacción,
+bloqueará la fila del rol admin y el perfil elegido, comprobará que sigue sin existir un
+administrador activo y actualizará únicamente el rol de esa fila. Verificará que cambió
+exactamente una cuenta y que existe un administrador activo antes de confirmar. Ante cualquier
+discrepancia revertirá la transacción. Registrar responsable, autorización y fecha en el
+registro operativo del equipo. Este bootstrap de propietario es independiente de la auditoría
+de operaciones JWT. La migración y el arranque nunca seleccionan una cuenta para promoverla.
+
+Las suites `permissions_model`, `permissions_admin` y `permissions_migration` verifican
+ACL, RPC, auditoría, bloqueos reales con `pgrowlocks` y conservación de datos al reproducir
+la migración del historial. La extensión de inspección se crea dentro de la transacción de prueba.
 
 ## Pruebas PostgreSQL y RLS
 
@@ -153,13 +188,13 @@ V8 de TypeScript.
 Comprobaciones adicionales locales:
 
 ```sh
-npm exec -- supabase db lint --schema public,private --fail-on warning
+npm exec -- supabase db lint --schema public,private,authorization_internal --fail-on warning
 npm exec -- supabase db advisors --type security --fail-on error
 ```
 
 Consultar `--help` al actualizar la CLI. La CLI 3 ya no necesita `--local` para
 estos comandos. No confundir un asesor del remoto sin migrar con la revisión del
-esquema local de T1/T2.
+esquema local.
 
 ## Integración continua y despliegue posterior
 
@@ -176,7 +211,7 @@ por el equipo: revisar SQL y diff, superar CI y revisión humana, confirmar el
 proyecto y su historial, comprobar identidades preexistentes y respaldo, y aplicar
 las migraciones versionadas en orden con una identidad autorizada. Verificar después historial,
 triggers, RLS y asesores. No sustituirlo por cambios manuales en el SQL Editor;
-los cambios posteriores deben quedar en nuevas migraciones. T1/T2 no incluyen ese
+los cambios posteriores deben quedar en nuevas migraciones. T1, T2 y T3 no incluyen ese
 despliegue ni modificaciones administrativas de Auth remoto.
 
 Referencias oficiales: [datos de usuario y triggers](https://supabase.com/docs/guides/auth/managing-user-data),
