@@ -1,9 +1,14 @@
 -- HU-06/T4a: report evidence model, constraints aligned with
--- web/src/lib/evidences/rules.ts and deletion behaviour.
+-- web/src/lib/evidences/rules.ts, per-collaborator limit and deletion behaviour.
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 select no_plan();
+
+-- Storage path convention: {uploaded_by}/{report_id}/{id}.{ext}.
+create function pg_temp.evidence_path(uploader uuid, report uuid, evidence uuid, ext text)
+returns text language sql immutable
+as $$ select uploader::text || '/' || report::text || '/' || evidence::text || '.' || ext $$;
 
 select has_table('public', 'report_evidences', 'Report evidences table exists');
 select columns_are('public', 'report_evidences', array[
@@ -59,8 +64,9 @@ select ok(
 select ok(
   exists(select 1 from pg_indexes
          where schemaname = 'public' and tablename = 'report_evidences'
-           and indexname = 'report_evidences_uploaded_by_idx'),
-  'Uploader index exists'
+           and indexname = 'report_evidences_uploaded_by_report_idx'
+           and indexdef like '%(uploaded_by, report_id)%'),
+  'Index for the per-collaborator limit and uploader lookups exists'
 );
 select ok(
   exists(select 1 from pg_indexes
@@ -68,6 +74,17 @@ select ok(
            and indexname = 'report_evidences_storage_path_key'),
   'Storage path is unique'
 );
+
+select has_trigger('public', 'report_evidences', 'report_evidences_enforce_limit',
+  'Per-collaborator limit trigger exists');
+select ok(
+  (select prosecdef and proconfig @> array['search_path=""']
+   from pg_proc where oid = 'private.enforce_report_evidences_limit()'::regprocedure),
+  'Limit function is definer (counts hidden rows too) with an empty search_path'
+);
+select ok(not has_function_privilege(r, 'private.enforce_report_evidences_limit()', 'EXECUTE'),
+  r || ' cannot execute the limit function')
+from unnest(array['anon', 'authenticated', 'service_role']) r;
 
 -- Fixtures: two users (profiles are created by the Auth trigger) and two reports.
 insert into auth.users (id) values
@@ -93,7 +110,8 @@ insert into public.report_evidences (
   'f1111111-1111-4111-8111-111111111111',
   'a1111111-1111-4111-8111-111111111111',
   'd2222222-2222-4222-8222-222222222222',
-  'reports/a1111111-1111-4111-8111-111111111111/f1111111-1111-4111-8111-111111111111.png',
+  pg_temp.evidence_path('d2222222-2222-4222-8222-222222222222',
+    'a1111111-1111-4111-8111-111111111111', 'f1111111-1111-4111-8111-111111111111', 'png'),
   'captura 2026.11.18.png',
   'image/png',
   10485760,
@@ -108,22 +126,25 @@ select results_eq(
   'Valid evidence is stored with default moderation status and creation time'
 );
 
--- Accepted variants: JPEG stored as .jpg, PDF, WebP, 255-character name, 1 byte.
+-- Accepted variants: JPEG stored as .jpg, WebP, 255-character name, 1 byte.
 insert into public.report_evidences (
   id, report_id, uploaded_by, storage_path, original_name,
   mime_type, size_bytes, sha256
 ) values
   ('f2222222-2222-4222-8222-222222222222', 'a1111111-1111-4111-8111-111111111111',
    'd2222222-2222-4222-8222-222222222222',
-   'reports/a1111111-1111-4111-8111-111111111111/f2222222-2222-4222-8222-222222222222.jpg',
+   pg_temp.evidence_path('d2222222-2222-4222-8222-222222222222',
+     'a1111111-1111-4111-8111-111111111111', 'f2222222-2222-4222-8222-222222222222', 'jpg'),
    'foto.jpeg', 'image/jpeg', 1, repeat('b', 64)),
   ('f3333333-3333-4333-8333-333333333333', 'a1111111-1111-4111-8111-111111111111',
    'd2222222-2222-4222-8222-222222222222',
-   'reports/a1111111-1111-4111-8111-111111111111/f3333333-3333-4333-8333-333333333333.pdf',
-   repeat('n', 251) || '.pdf', 'application/pdf', 2048, repeat('c', 64)),
+   pg_temp.evidence_path('d2222222-2222-4222-8222-222222222222',
+     'a1111111-1111-4111-8111-111111111111', 'f3333333-3333-4333-8333-333333333333', 'png'),
+   repeat('n', 251) || '.png', 'image/png', 2048, repeat('c', 64)),
   ('f4444444-4444-4444-8444-444444444444', 'a1111111-1111-4111-8111-111111111111',
    'd2222222-2222-4222-8222-222222222222',
-   'reports/a1111111-1111-4111-8111-111111111111/f4444444-4444-4444-8444-444444444444.webp',
+   pg_temp.evidence_path('d2222222-2222-4222-8222-222222222222',
+     'a1111111-1111-4111-8111-111111111111', 'f4444444-4444-4444-8444-444444444444', 'webp'),
    'Captura en español.webp', 'image/webp', 2048, repeat('d', 64));
 
 select is(
@@ -144,8 +165,9 @@ select c.description,
        coalesce(c.id, 'f9999999-9999-4999-8999-999999999999'),
        coalesce(c.report_id, 'a1111111-1111-4111-8111-111111111111'),
        coalesce(c.uploaded_by, 'd2222222-2222-4222-8222-222222222222'),
-       coalesce(c.storage_path,
-         'reports/a1111111-1111-4111-8111-111111111111/f9999999-9999-4999-8999-999999999999.png'),
+       coalesce(c.storage_path, pg_temp.evidence_path(
+         'd2222222-2222-4222-8222-222222222222', 'a1111111-1111-4111-8111-111111111111',
+         'f9999999-9999-4999-8999-999999999999', 'png')),
        coalesce(c.original_name, 'valida.png'),
        coalesce(c.mime_type, 'image/png'),
        coalesce(c.size_bytes, 2048),
@@ -156,6 +178,9 @@ from (values
   ('Empty file rejected', null::uuid, null::uuid, null::uuid, null, null, null, 0, null, null, '23514'),
   ('Negative size rejected', null, null, null, null, null, null, -1, null, null, '23514'),
   ('File over EVIDENCE_MAX_FILE_BYTES rejected', null, null, null, null, null, null, 10485761, null, null, '23514'),
+  ('PDF is no longer allowed', null, null, null,
+   'd2222222-2222-4222-8222-222222222222/a1111111-1111-4111-8111-111111111111/f9999999-9999-4999-8999-999999999999.pdf',
+   'informe.pdf', 'application/pdf', null, null, null, '23514'),
   ('MIME outside the allow list rejected', null, null, null, null, null, 'image/svg+xml', null, null, null, '23514'),
   ('Declared MIME with different case rejected', null, null, null, null, null, 'IMAGE/PNG', null, null, null, '23514'),
   ('Short SHA-256 rejected', null, null, null, null, null, null, null, repeat('e', 63), null, '23514'),
@@ -175,18 +200,23 @@ from (values
   ('Name with isolate control rejected', null, null, null, null, 'factura' || chr(8294) || '.png', null, null, null, null, '23514'),
   ('Non-NFC name rejected', null, null, null, null, 'espan' || chr(771) || 'ol.png', null, null, null, null, '23514'),
   ('Storage path using the client name rejected', null, null, null,
-   'reports/a1111111-1111-4111-8111-111111111111/valida.png', null, null, null, null, null, '23514'),
+   'd2222222-2222-4222-8222-222222222222/a1111111-1111-4111-8111-111111111111/valida.png', null, null, null, null, null, '23514'),
+  ('Storage path under another user folder rejected', null, null, null,
+   'd1111111-1111-4111-8111-111111111111/a1111111-1111-4111-8111-111111111111/f9999999-9999-4999-8999-999999999999.png', null, null, null, null, null, '23514'),
   ('Storage path of another report rejected', null, null, null,
-   'reports/a2222222-2222-4222-8222-222222222222/f9999999-9999-4999-8999-999999999999.png', null, null, null, null, null, '23514'),
+   'd2222222-2222-4222-8222-222222222222/a2222222-2222-4222-8222-222222222222/f9999999-9999-4999-8999-999999999999.png', null, null, null, null, null, '23514'),
+  ('Former reports/ prefix rejected', null, null, null,
+   'reports/a1111111-1111-4111-8111-111111111111/f9999999-9999-4999-8999-999999999999.png', null, null, null, null, null, '23514'),
   ('Storage path with an extension that does not match the MIME rejected', null, null, null,
-   'reports/a1111111-1111-4111-8111-111111111111/f9999999-9999-4999-8999-999999999999.pdf', null, null, null, null, null, '23514'),
+   'd2222222-2222-4222-8222-222222222222/a1111111-1111-4111-8111-111111111111/f9999999-9999-4999-8999-999999999999.webp', null, null, null, null, null, '23514'),
   ('JPEG stored as .jpeg rejected (canonical .jpg)', null, null, null,
-   'reports/a1111111-1111-4111-8111-111111111111/f9999999-9999-4999-8999-999999999999.jpeg', null, 'image/jpeg', null, null, null, '23514'),
+   'd2222222-2222-4222-8222-222222222222/a1111111-1111-4111-8111-111111111111/f9999999-9999-4999-8999-999999999999.jpeg', null, 'image/jpeg', null, null, null, '23514'),
   ('Storage path with a traversal prefix rejected', null, null, null,
-   '../reports/a1111111-1111-4111-8111-111111111111/f9999999-9999-4999-8999-999999999999.png', null, null, null, null, null, '23514'),
+   '../d2222222-2222-4222-8222-222222222222/a1111111-1111-4111-8111-111111111111/f9999999-9999-4999-8999-999999999999.png', null, null, null, null, null, '23514'),
   ('Unknown report rejected', null, 'a9999999-9999-4999-8999-999999999999', null,
-   'reports/a9999999-9999-4999-8999-999999999999/f9999999-9999-4999-8999-999999999999.png', null, null, null, null, null, '23503'),
-  ('Unknown uploader rejected', null, null, 'd9999999-9999-4999-8999-999999999999', null, null, null, null, null, null, '23503'),
+   'd2222222-2222-4222-8222-222222222222/a9999999-9999-4999-8999-999999999999/f9999999-9999-4999-8999-999999999999.png', null, null, null, null, null, '23503'),
+  ('Unknown uploader rejected', null, null, 'd9999999-9999-4999-8999-999999999999',
+   'd9999999-9999-4999-8999-999999999999/a1111111-1111-4111-8111-111111111111/f9999999-9999-4999-8999-999999999999.png', null, null, null, null, null, '23503'),
   ('Same content twice in one report rejected', null, null, null, null, null, null, null, repeat('a', 64), null, '23505')
 ) as c(description, id, report_id, uploaded_by, storage_path, original_name,
        mime_type, size_bytes, sha256, moderation_status, sqlstate);
@@ -208,30 +238,72 @@ select is(
   0, 'No rejected evidence was stored'
 );
 
--- The same content may support a different report.
+-- Per-collaborator limit: EVIDENCE_MAX_FILES (5) per uploader and report.
+-- d2 already has 4 evidences in report a1; hidden ones count too.
+update public.report_evidences set moderation_status = 'hidden'
+where id = 'f1111111-1111-4111-8111-111111111111';
+
 select lives_ok(
   $$insert into public.report_evidences (
       id, report_id, uploaded_by, storage_path, original_name,
       mime_type, size_bytes, sha256)
     values ('f5555555-5555-4555-8555-555555555555',
-      'a2222222-2222-4222-8222-222222222222',
-      'd2222222-2222-4222-8222-222222222222',
-      'reports/a2222222-2222-4222-8222-222222222222/f5555555-5555-4555-8555-555555555555.png',
+      'a1111111-1111-4111-8111-111111111111', 'd2222222-2222-4222-8222-222222222222',
+      pg_temp.evidence_path('d2222222-2222-4222-8222-222222222222',
+        'a1111111-1111-4111-8111-111111111111', 'f5555555-5555-4555-8555-555555555555', 'png'),
+      'quinta.png', 'image/png', 2048, repeat('5', 64))$$,
+  'The fifth evidence of a collaborator in a report is accepted'
+);
+
+select throws_ok(
+  $$insert into public.report_evidences (
+      id, report_id, uploaded_by, storage_path, original_name,
+      mime_type, size_bytes, sha256)
+    values ('f6666666-6666-4666-8666-666666666666',
+      'a1111111-1111-4111-8111-111111111111', 'd2222222-2222-4222-8222-222222222222',
+      pg_temp.evidence_path('d2222222-2222-4222-8222-222222222222',
+        'a1111111-1111-4111-8111-111111111111', 'f6666666-6666-4666-8666-666666666666', 'png'),
+      'sexta.png', 'image/png', 2048, repeat('6', 64))$$,
+  '23514', 'EVIDENCE_TOO_MANY',
+  'The sixth evidence of a collaborator in a report is rejected, hidden ones included'
+);
+
+select lives_ok(
+  $$insert into public.report_evidences (
+      id, report_id, uploaded_by, storage_path, original_name,
+      mime_type, size_bytes, sha256)
+    values ('f7777777-7777-4777-8777-777777777777',
+      'a1111111-1111-4111-8111-111111111111', 'd1111111-1111-4111-8111-111111111111',
+      pg_temp.evidence_path('d1111111-1111-4111-8111-111111111111',
+        'a1111111-1111-4111-8111-111111111111', 'f7777777-7777-4777-8777-777777777777', 'png'),
+      'otra.png', 'image/png', 2048, repeat('7', 64))$$,
+  'Another collaborator still has its own quota in the same report'
+);
+
+-- The same content may support a different report, and the quota is per report.
+select lives_ok(
+  $$insert into public.report_evidences (
+      id, report_id, uploaded_by, storage_path, original_name,
+      mime_type, size_bytes, sha256)
+    values ('f8888888-8888-4888-8888-888888888888',
+      'a2222222-2222-4222-8222-222222222222', 'd2222222-2222-4222-8222-222222222222',
+      pg_temp.evidence_path('d2222222-2222-4222-8222-222222222222',
+        'a2222222-2222-4222-8222-222222222222', 'f8888888-8888-4888-8888-888888888888', 'png'),
       'captura 2026.11.18.png', 'image/png', 10485760, repeat('a', 64))$$,
-  'Same content is accepted for another report'
+  'Same content and a new quota are accepted for another report'
 );
 
 select throws_ok(
   $$update public.report_evidences
-    set storage_path = 'reports/a1111111-1111-4111-8111-111111111111/f1111111-1111-4111-8111-111111111111.png'
-    where id = 'f5555555-5555-4555-8555-555555555555'$$,
+    set storage_path = 'd2222222-2222-4222-8222-222222222222/a1111111-1111-4111-8111-111111111111/f1111111-1111-4111-8111-111111111111.png'
+    where id = 'f8888888-8888-4888-8888-888888888888'$$,
   '23514', null, 'Storage path cannot point at another evidence'
 );
 
 select lives_ok(
-  $$update public.report_evidences set moderation_status = 'hidden'
+  $$update public.report_evidences set moderation_status = 'visible'
     where id = 'f1111111-1111-4111-8111-111111111111'$$,
-  'An evidence can be hidden by moderation without deleting it'
+  'Moderation can make a hidden evidence visible again without hitting the limit'
 );
 
 select throws_ok(
