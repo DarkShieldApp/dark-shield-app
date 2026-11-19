@@ -597,20 +597,12 @@
   padding: 6px 10px;
   gap: 10px;
 }
-.fileRow img,
-.pdfIcon {
+.fileRow img {
   width: 39px;
   height: 39px;
   object-fit: cover;
   border-radius: 5px;
   background: #f0f5f3;
-}
-.pdfIcon {
-  display: grid;
-  place-items: center;
-  color: #a74c4c;
-  font-size: 9px;
-  font-weight: 700;
 }
 .fileDetails {
   min-width: 0;

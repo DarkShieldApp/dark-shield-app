@@ -72,9 +72,11 @@ HU-05/T5 añade pruebas de `prepareReportDraft`: URL web, campos obligatorios,
 límites de descripción y borrador normalizado. No prueban persistencia; HU-05 aún
 no tiene endpoint ni modelo. Para comprobar la interfaz, ejecutar `npm run dev:web`,
 abrir `http://localhost:3000` y usar **Crear reporte**. Un borrador válido indica
-que sigue en esta sesión; no crea un registro. En **Evidencias**, seleccionar
-imágenes PNG, JPEG o WebP permite verlas localmente; al recargar se descartan
-porque no se suben. El PDF ya no se admite y se descarta al validarlo. **Consultar reportes** indica que la API sigue
+que sigue en esta sesión; no crea un registro. En **Evidencias**, se seleccionan
+imágenes PNG, JPEG o WebP (sin PDF) con un estado por archivo; **Subir evidencias**
+sigue el flujo en dos pasos de HU-06/T4 para el reporte indicado en `?reporte=<uuid>`
+y permite reintentar los fallos temporales. Hasta HU-11 no hay sesión en el
+navegador, así que la subida pide iniciar sesión. **Consultar reportes** indica que la API sigue
 pendiente, sin inventar resultados. HU-01/T9 describe el contrato previsto en
 [domain-design.md](domain-design.md#hu-01t4-y-hu-01t9--interfaz-y-mecanismo-de-consulta).
 
@@ -104,6 +106,8 @@ declaraciones `.d.ts` dentro de ese ámbito. Actualmente son:
 - `src/lib/supabase/client.ts`: factoría del navegador.
 - `src/lib/evidences/rules.ts`: reglas de aceptación de evidencias (HU-06/T6).
 - `src/lib/evidences/selection.ts`: selección y validación de evidencias en el cliente (HU-06/T3).
+- `src/lib/evidences/upload.ts`: subida de evidencias en dos pasos desde el cliente (HU-06/T3).
+- `src/lib/supabase/session.ts`: token de la sesión del cliente de Supabase para la API.
 - `src/lib/reports/rules.ts`: validación del borrador de creación (HU-05/T5).
 - `src/server/supabase.ts`: factoría del servidor.
 - `src/server/evidences.ts`: endpoints de evidencias, autorización y compensación (HU-06/T4).

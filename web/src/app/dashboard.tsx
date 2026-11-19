@@ -5,6 +5,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ChangeEvent,
   type FormEvent,
 } from 'react';
@@ -12,11 +13,58 @@ import Image from 'next/image';
 import styles from './dashboard.module.css';
 import { prepareReportDraft } from '../lib/reports/rules';
 import {
-  EVIDENCE_SIGNATURE_BYTES,
-  validateEvidenceFile,
+  ALLOWED_EVIDENCE_TYPES,
+  EVIDENCE_MAX_FILE_BYTES,
+  EVIDENCE_MAX_FILES,
 } from '../lib/evidences/rules';
+import {
+  EMPTY_EVIDENCE_SELECTION,
+  EVIDENCE_ERROR_MESSAGES,
+  addToEvidenceSelection,
+  prepareEvidenceFiles,
+  removeFromEvidenceSelection,
+  type EvidenceSelection,
+  type EvidenceSelectionItem,
+} from '../lib/evidences/selection';
+import {
+  uploadEvidences,
+  type EvidenceUploadState,
+} from '../lib/evidences/upload';
+import { getAccessToken } from '../lib/supabase/session';
 
 type Section = 'consulta' | 'crear' | 'evidencias';
+
+const ACCEPTED_TYPES = ALLOWED_EVIDENCE_TYPES.map(
+  ({ mimeType }) => mimeType,
+).join(',');
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Reporte al que se aportan las evidencias: `?reporte=<uuid>` en la URL.
+const noSubscription = () => () => {};
+const readReportParam = () =>
+  new URLSearchParams(window.location.search).get('reporte');
+const noReportOnServer = () => null;
+
+const PHASE_LABELS: Record<string, string> = {
+  requesting: 'Preparando la subida…',
+  uploading: 'Subiendo…',
+  confirming: 'Comprobando y guardando…',
+  done: 'Guardada en el reporte',
+};
+
+function withoutKey<T>(record: Record<string, T>, key: string) {
+  const copy = { ...record };
+  delete copy[key];
+  return copy;
+}
+
+function isBusy(state: EvidenceUploadState | undefined) {
+  return (
+    state?.phase === 'requesting' ||
+    state?.phase === 'uploading' ||
+    state?.phase === 'confirming'
+  );
+}
 
 export default function Dashboard() {
   const [section, setSection] = useState<Section>('consulta');
@@ -31,23 +79,39 @@ export default function Dashboard() {
     description: '',
   });
   const [feedback, setFeedback] = useState('');
-  const [selectedFiles, setSelectedFiles] = useState<
-    { file: File; preview: string }[]
-  >([]);
-  const files = selectedFiles.map(({ file }) => file);
-  const activePreviews = useRef<string[]>([]);
+  const [selection, setSelection] = useState<EvidenceSelection>(
+    EMPTY_EVIDENCE_SELECTION,
+  );
+  const [uploads, setUploads] = useState<Record<string, EvidenceUploadState>>(
+    {},
+  );
+  const [previews, setPreviews] = useState<Record<string, string>>({});
+  // URL de previsualización vivas, para liberarlas al desmontar.
+  const previewUrls = useRef(new Set<string>());
   const [fileNotice, setFileNotice] = useState('');
+  const reportParam = useSyncExternalStore(
+    noSubscription,
+    readReportParam,
+    noReportOnServer,
+  );
+  const reportId = reportParam && UUID.test(reportParam) ? reportParam : null;
 
   const fileSummary = useMemo(
-    () => files.reduce((sum, file) => sum + file.size, 0),
-    [files],
+    () => selection.items.reduce((sum, { file }) => sum + file.size, 0),
+    [selection],
   );
+  const pending = selection.items.filter(
+    (item) =>
+      item.status === 'accepted' &&
+      uploads[item.key]?.phase !== 'done' &&
+      !isBusy(uploads[item.key]),
+  );
+  const busy = selection.items.some((item) => isBusy(uploads[item.key]));
 
-  useEffect(
-    () => () =>
-      activePreviews.current.forEach((url) => URL.revokeObjectURL(url)),
-    [],
-  );
+  useEffect(() => {
+    const active = previewUrls.current;
+    return () => active.forEach((url) => URL.revokeObjectURL(url));
+  }, []);
 
   function search(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -72,42 +136,58 @@ export default function Dashboard() {
   }
 
   async function selectFiles(event: ChangeEvent<HTMLInputElement>) {
-    const selected = Array.from(event.target.files ?? []);
-    const limited = selected.slice(0, 5);
-    const checked = await Promise.all(
-      limited.map(async (file) => {
-        const head = new Uint8Array(
-          await file.slice(0, EVIDENCE_SIGNATURE_BYTES).arrayBuffer(),
-        );
-        return {
-          file,
-          result: validateEvidenceFile({
-            name: file.name,
-            type: file.type,
-            size: file.size,
-            head,
-          }),
-        };
-      }),
+    const input = event.target;
+    const prepared = await prepareEvidenceFiles(Array.from(input.files ?? []));
+    input.value = '';
+    const { selection: next, duplicates } = addToEvidenceSelection(
+      selection,
+      prepared,
     );
-    const accepted = checked
-      .filter(({ result }) => result.ok)
-      .map(({ file }) => file);
-    const rejectedCount = checked.length - accepted.length;
-    const notices = [
-      selected.length > 5 ? 'Se han limitado los archivos a cinco.' : '',
-      rejectedCount > 0
-        ? `${rejectedCount} archivo(s) no cumplen el tipo, la firma o el tamaño permitido y se han descartado.`
+    const created: Record<string, string> = {};
+    for (const { key, file } of next.items) {
+      if (!previews[key]) {
+        created[key] = URL.createObjectURL(file);
+        previewUrls.current.add(created[key]);
+      }
+    }
+    setPreviews((current) => ({ ...current, ...created }));
+    setSelection(next);
+    setFileNotice(
+      duplicates.length > 0
+        ? `${duplicates.length} archivo(s) ya estaban seleccionados y no se han repetido.`
         : '',
-    ].filter(Boolean);
-    setFileNotice(notices.join(' '));
-    activePreviews.current.forEach((url) => URL.revokeObjectURL(url));
-    const prepared = accepted.map((file) => ({
-      file,
-      preview: URL.createObjectURL(file),
-    }));
-    activePreviews.current = prepared.map(({ preview }) => preview);
-    setSelectedFiles(prepared);
+    );
+  }
+
+  function removeFile(key: string) {
+    const preview = previews[key];
+    if (preview) {
+      URL.revokeObjectURL(preview);
+      previewUrls.current.delete(preview);
+    }
+    setPreviews((current) => withoutKey(current, key));
+    setSelection(removeFromEvidenceSelection(selection, key));
+    setUploads((current) => withoutKey(current, key));
+  }
+
+  async function send(items: readonly EvidenceSelectionItem[]) {
+    if (!reportId || items.length === 0) return;
+    await uploadEvidences(reportId, items, {
+      getAccessToken: () => getAccessToken(),
+      onChange: (key, state) =>
+        setUploads((current) => ({ ...current, [key]: state })),
+    });
+  }
+
+  function statusOf(item: EvidenceSelectionItem) {
+    if (item.status === 'rejected') {
+      return { text: EVIDENCE_ERROR_MESSAGES[item.code], error: true };
+    }
+    const state = uploads[item.key];
+    if (!state) return { text: 'Lista para subir', error: false };
+    if (state.phase === 'error')
+      return { text: state.error.message, error: true };
+    return { text: PHASE_LABELS[state.phase] ?? '', error: false };
   }
 
   function submitReport(event: FormEvent<HTMLFormElement>) {
@@ -445,8 +525,9 @@ export default function Dashboard() {
                 <label className={styles.uploadZone}>
                   <input
                     type="file"
-                    accept="image/png,image/jpeg,image/webp,application/pdf"
+                    accept={ACCEPTED_TYPES}
                     multiple
+                    disabled={busy}
                     onChange={selectFiles}
                   />
                   <span className={styles.uploadIcon}>↑</span>
@@ -454,7 +535,8 @@ export default function Dashboard() {
                     Arrastra archivos aquí o <u>explora tu dispositivo</u>
                   </b>
                   <small>
-                    PNG, JPG, WEBP o PDF · hasta 5 archivos · 10 MB por archivo
+                    PNG, JPG o WEBP · hasta {EVIDENCE_MAX_FILES} archivos ·{' '}
+                    {EVIDENCE_MAX_FILE_BYTES / (1024 * 1024)} MB por archivo
                   </small>
                 </label>
                 {fileNotice && (
@@ -462,59 +544,74 @@ export default function Dashboard() {
                     {fileNotice}
                   </p>
                 )}
-                {files.length > 0 && (
+                {selection.items.length > 0 && (
                   <div className={styles.fileList}>
                     <div className={styles.filesHeading}>
                       <b>
-                        Archivos seleccionados <span>{files.length}</span>
+                        Archivos seleccionados{' '}
+                        <span>{selection.items.length}</span>
                       </b>
                       <small>
                         {(fileSummary / (1024 * 1024)).toFixed(2)} MB en total
                       </small>
                     </div>
-                    {selectedFiles.map(({ file, preview }, index) => (
-                      <div
-                        className={styles.fileRow}
-                        key={`${file.name}-${index}`}
-                      >
-                        {file.type.startsWith('image/') ? (
-                          <Image
-                            src={preview}
-                            alt={`Vista previa de ${file.name}`}
-                            width={39}
-                            height={39}
-                            unoptimized
-                          />
-                        ) : (
-                          <div className={styles.pdfIcon}>PDF</div>
-                        )}
-                        <div className={styles.fileDetails}>
-                          <b>{file.name}</b>
-                          <small>
-                            {(file.size / 1024).toFixed(0)} KB · Seleccionado
-                            localmente
-                          </small>
+                    {selection.items.map((item) => {
+                      const { key, file } = item;
+                      const state = uploads[key];
+                      const status = statusOf(item);
+                      const preview = previews[key];
+                      return (
+                        <div className={styles.fileRow} key={key}>
+                          {preview && (
+                            <Image
+                              src={preview}
+                              alt={`Vista previa de ${file.name}`}
+                              width={39}
+                              height={39}
+                              unoptimized
+                            />
+                          )}
+                          <div className={styles.fileDetails}>
+                            <b>{file.name}</b>
+                            <small
+                              className={
+                                status.error ? styles.error : undefined
+                              }
+                              role={status.error ? 'alert' : 'status'}
+                            >
+                              {(file.size / 1024).toFixed(0)} KB · {status.text}
+                            </small>
+                          </div>
+                          {state?.phase === 'error' &&
+                            state.error.retryable && (
+                              <button
+                                className={styles.secondaryButton}
+                                type="button"
+                                disabled={busy}
+                                onClick={() => send([item])}
+                              >
+                                Reintentar
+                              </button>
+                            )}
+                          <span className={styles.localTag}>
+                            {state?.phase === 'done'
+                              ? 'Guardada'
+                              : isBusy(state)
+                                ? 'Subiendo'
+                                : 'Local'}
+                          </span>
+                          <button
+                            className={styles.removeButton}
+                            type="button"
+                            aria-label={`Quitar ${file.name}`}
+                            disabled={isBusy(state)}
+                            onClick={() => removeFile(key)}
+                          >
+                            ×
+                          </button>
                         </div>
-                        <span className={styles.localTag}>Local</span>
-                        <button
-                          className={styles.removeButton}
-                          type="button"
-                          aria-label={`Quitar ${file.name}`}
-                          onClick={() => {
-                            URL.revokeObjectURL(preview);
-                            activePreviews.current =
-                              activePreviews.current.filter(
-                                (url) => url !== preview,
-                              );
-                            setSelectedFiles(
-                              selectedFiles.filter((_, i) => i !== index),
-                            );
-                          }}
-                        >
-                          ×
-                        </button>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
                 <div className={styles.formActions}>
@@ -525,17 +622,22 @@ export default function Dashboard() {
                   >
                     ← Volver al reporte
                   </button>
-                  <span className={styles.localNote}>
-                    Los archivos no se han subido.
-                  </span>
+                  <button
+                    type="button"
+                    className={styles.primaryButton}
+                    disabled={!reportId || busy || pending.length === 0}
+                    onClick={() => send(pending)}
+                  >
+                    {busy ? 'Subiendo…' : 'Subir evidencias'}
+                  </button>
                 </div>
               </section>
               <div className={styles.notice}>
                 <span>ⓘ</span>
                 <p>
-                  La previsualización se genera solo en este navegador. La
-                  validación y el almacenamiento seguros del archivo se harán en
-                  el servidor al implementar HU-06/T3–T4.
+                  {reportId
+                    ? 'Los archivos se suben directamente al almacenamiento privado. El servidor comprueba cada uno y elimina sus metadatos (EXIF y ubicación GPS) antes de guardarlo. Necesitas haber iniciado sesión como colaborador.'
+                    : 'Abre esta sección desde un reporte para aportar evidencias: falta el identificador del reporte (?reporte=…).'}
                 </p>
               </div>
             </>

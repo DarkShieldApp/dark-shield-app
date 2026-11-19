@@ -446,7 +446,16 @@ Los códigos son estables: T3 y T4 deben reutilizarlos en la interfaz y en la AP
 
 `validateEvidenceBatch` no se usa directamente sobre lo seleccionado porque rechaza el envío completo (`index: null`) cuando hay más de `EVIDENCE_MAX_FILES` archivos y, por tanto, no da un resultado por archivo.
 
-Queda para la parte 2 de T3: la subida directa a Storage y la confirmación, que siguen el flujo en dos pasos del contrato de HU-06/T4 y dependen de sus endpoints. La interfaz de selección de HU-06/T2 (`dashboard.tsx`) debe delegar en este módulo para que su lógica quede dentro de la cobertura medida.
+### Subida desde el cliente (HU-06/T3, parte 2)
+
+`web/src/lib/evidences/upload.ts` implementa en el navegador el flujo en dos pasos del contrato de HU-06/T4 (`docs/api/evidences.md`), sin React ni Supabase: recibe `fetch` y la función que da el token, y notifica el estado de cada archivo.
+
+- `uploadEvidences(reportId, items, deps)` pide las URL firmadas para los archivos aceptados por `selection.ts`, sube cada uno con `PUT` a su URL (sin el token de la API) y lo confirma. Los archivos se procesan uno detrás de otro.
+- Estados por archivo: `requesting`, `uploading`, `confirming`, `done` (con el `id` de la evidencia) o `error` con `code`, mensaje en español y `retryable`. Los códigos de archivo usan `EVIDENCE_ERROR_MESSAGES`; los demás, `EVIDENCE_UPLOAD_MESSAGES`.
+- Se pueden reintentar los errores de red, los 5xx, los fallos temporales de Storage y los archivos que no se enviaron porque otro del mismo envío era inválido. No se reintentan los rechazos de `rules.ts`, los duplicados ni los 401, 403 y 404. El reintento repite el flujo completo para ese archivo con una URL nueva, porque el servidor borra el original al fallar la confirmación.
+- `web/src/lib/supabase/session.ts` obtiene el `access_token` de la sesión del cliente de Supabase. Hasta que HU-11 implemente el inicio de sesión, el cliente del navegador no guarda sesión y la interfaz pide iniciarla sin llamar a la API.
+
+La interfaz de HU-06/T2 (`dashboard.tsx`) usa ahora `selection.ts` y `upload.ts`: selección acumulada sin duplicados, un estado por archivo, botón de reintento y sin PDF. El reporte de destino llega en el parámetro `?reporte=<uuid>`; sin él, la subida queda desactivada. La lógica está en los módulos medidos; el componente sigue fuera del ámbito de cobertura, como antes.
 
 ### Fuera del alcance de T6
 
