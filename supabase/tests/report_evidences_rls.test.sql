@@ -277,6 +277,23 @@ select throws_ok($$update public.report_evidences set original_name = 'otro.png'
 select throws_ok($$delete from public.report_evidences$$,
   '42501', null, 'Evidences cannot be deleted directly');
 
+-- Impersonating a collaborator who is at the limit fails on RLS, without
+-- revealing how many evidences that collaborator has.
+select set_config('request.jwt.claims',
+  '{"sub":"b2222222-2222-4222-8222-222222222222","role":"authenticated"}', true);
+select throws_ok(
+  $$insert into public.report_evidences (
+      id, report_id, uploaded_by, storage_path, original_name,
+      mime_type, size_bytes, sha256)
+    values ('ea666666-6666-4666-8666-666666666666',
+      'c1111111-1111-4111-8111-111111111111',
+      'b1111111-1111-4111-8111-111111111111',
+      pg_temp.evidence_path('b1111111-1111-4111-8111-111111111111',
+        'c1111111-1111-4111-8111-111111111111', 'ea666666-6666-4666-8666-666666666666'),
+      'suplantada.png', 'image/png', 100, repeat('f', 64))$$,
+  '42501', null, 'Impersonation is rejected by RLS, not by the limit'
+);
+
 -- Inactive profile, whatever its token metadata says, and token without subject.
 select set_config('request.jwt.claims',
   '{"sub":"b3333333-3333-4333-8333-333333333333","role":"authenticated","user_metadata":{"is_active":true}}', true);
@@ -300,8 +317,8 @@ select throws_ok(
       mime_type, size_bytes, sha256)
     values ('e9999999-9999-4999-8999-999999999999',
       'c1111111-1111-4111-8111-111111111111',
-      'b1111111-1111-4111-8111-111111111111',
-      pg_temp.evidence_path('b1111111-1111-4111-8111-111111111111',
+      'b2222222-2222-4222-8222-222222222222',
+      pg_temp.evidence_path('b2222222-2222-4222-8222-222222222222',
         'c1111111-1111-4111-8111-111111111111', 'e9999999-9999-4999-8999-999999999999'),
       'sinsesion.png', 'image/png', 100, repeat('9', 64))$$,
   '42501', null, 'Token without a subject cannot add evidences'

@@ -5,6 +5,9 @@ set local search_path = public, extensions;
 select plan(5);
 select ok((select cardinality(statements) > 0 from supabase_migrations.schema_migrations
   where version = '20261111113011'), 'T2 SQL is recorded');
+-- The later HU-06 admin policies read role_code: remove that table only
+-- within this historical replay.
+drop table public.report_evidences;
 alter table public.profiles drop column role_code;
 drop table public.roles;
 -- Restore the historical timestamp function from the actual T1 statements.
