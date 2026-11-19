@@ -74,7 +74,26 @@ Una evidencia por petición. El servidor:
 3. **Recodifica la imagen con `sharp`** en el mismo formato: elimina EXIF, GPS, XMP, IPTC y comentarios, aplica la orientación y limita la decodificación a 40 megapíxeles. Vuelve a validar el resultado.
 4. Guarda la copia limpia como `{user_id}/{reportId}/{evidenceId}.{ext}`, registra la fila (con su `sha256`) y borra el original.
 5. Si algo falla, borra lo que haya guardado (compensación) y responde con el error.
-6. Tras guardar, deja el punto de enganche de HU-06/T5 para recalcular la credibilidad; un fallo ahí se registra y no cambia el `201`. El recálculo no está implementado.
+6. Tras guardar, deja el punto de enganche de HU-06/T5 para recalcular la credibilidad; un fallo ahí se registra y no cambia el `201`. La función ya existe (HU-09/T2), pero el enganche no está conectado: corresponde a HU-06/T5. Debe hacerse así:
+
+   ```ts
+   import { recalculateReportCredibility } from '@/server/credibility';
+
+   const options: EvidenceServiceOptions = {
+     onEvidenceSaved: async (evidence) => {
+       try {
+         await recalculateReportCredibility(evidence.reportId, {
+           cause: 'evidence_added',
+           triggerId: evidence.id,
+         });
+       } catch {
+         // Ya registrado; el 201 no cambia.
+       }
+     },
+   };
+   ```
+
+   `onEvidenceSaved` ya se ejecuta dentro de un `try/catch`; el propio deja explícito que el fallo no se propaga. Errores y detalles en [la sección de HU-09](../domain-design.md#implementación-hu-09t2).
 
 Respuesta `201 Created`:
 
@@ -155,6 +174,6 @@ Ejemplo (`400 Bad Request`, _magic bytes_ falsos):
 ## 7. Pendiente
 
 - Limpieza periódica de subidas nunca confirmadas (objetos sin fila con más de 24 h): requiere un proceso con privilegios fuera de los handlers.
-- Recálculo de credibilidad (HU-06/T5), cuando HU-09/T2 esté en `main`.
+- Conectar el recálculo de credibilidad (HU-06/T5): `recalculateReportCredibility` ya está disponible (HU-09/T2); véase el paso 6.
 - Moderación por administradores desde la aplicación: la RLS ya la permite, pero no hay endpoint.
 - `POST /api/reports` usa todavía `INVALID_SESSION` para el token inválido; conviene alinearlo con el `401` único de esta API.

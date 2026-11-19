@@ -30,5 +30,10 @@ pasos, confirmación y lectura) con el token Bearer del usuario y la RLS como
 autoridad. Si falla la confirmación, el servidor intenta retirar los objetos escritos como compensación. El módulo `evidence-images.ts` recodifica las imágenes con `sharp` para eliminar
 metadatos. Contrato en [docs/api/evidences.md](../../../docs/api/evidences.md).
 
+`credibility.ts` calcula la credibilidad de los reportes (HU-09/T2) a partir de los
+agregados de la RPC `report_credibility_inputs`; no escribe nada y lanza
+`CredibilityError` si no puede calcularla. Diseño, errores y forma de invocarlo
+tras guardar en [la sección de HU-09](../../../docs/domain-design.md#implementación-hu-09t2).
+
 Todavía no hay sesiones con cookies en Next.js. Uso y límites de
 la factoría en [la guía de desarrollo](../../../docs/development.md#clientes-supabase).

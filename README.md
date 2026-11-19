@@ -21,7 +21,7 @@ DarkShieldApp/
 │       ├── app/             # Páginas y layouts de Next.js
 │       │   └── api/         # Reportes, permisos propios y administración
 │       ├── lib/supabase/    # Configuración y cliente de navegador
-│       └── server/          # Sesión Bearer, reportes y autorización
+│       └── server/          # Sesión Bearer, reportes, autorización y credibilidad
 ├── extension/
 │   ├── src/entrypoints/popup/
 │   └── wxt.config.ts       # WXT genera el manifest al compilar
