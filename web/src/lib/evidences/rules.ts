@@ -2,8 +2,10 @@
  * Reglas de aceptación de archivos de evidencia (HU-06).
  *
  * Módulo puro: sin dependencias de Next.js ni de Supabase, utilizable en el
- * cliente (HU-06/T3) y en el servidor (HU-06/T4). Los límites son una propuesta
- * pendiente de confirmar con el PO y con el resultado de HU-06/T1.
+ * cliente (HU-06/T3) y en el servidor (HU-06/T4). Tipos y límites acordados en
+ * la revisión del contrato de HU-06/T4: solo imágenes PNG, JPEG y WebP de hasta
+ * 10 MiB; el PDF no se admite (decisión del PO). Se repiten en el bucket
+ * `report-evidences` y en `public.report_evidences`: cambiarlos a la vez.
  */
 
 /** Tamaño máximo por archivo: 10 MiB. */
@@ -27,7 +29,7 @@ export const EVIDENCE_ERROR_CODES = {
 export type EvidenceErrorCode =
   (typeof EVIDENCE_ERROR_CODES)[keyof typeof EVIDENCE_ERROR_CODES];
 
-export type EvidenceKind = 'png' | 'jpeg' | 'webp' | 'pdf';
+export type EvidenceKind = 'png' | 'jpeg' | 'webp';
 
 export interface EvidenceCandidate {
   /** Nombre declarado por el cliente. */
@@ -94,12 +96,6 @@ const EVIDENCE_TYPE_RULES: readonly EvidenceTypeRule[] = [
       [8, ascii('WEBP')],
     ],
   },
-  {
-    kind: 'pdf',
-    mimeType: 'application/pdf',
-    extensions: ['pdf'],
-    signature: [[0, ascii('%PDF-')]],
-  },
 ];
 
 /** Tipos permitidos (lista blanca) con su MIME y extensiones. */
@@ -116,6 +112,8 @@ export const ALLOWED_EVIDENCE_TYPES: readonly {
 /** Extensiones que no pueden aparecer en segmentos intermedios del nombre. */
 const DISGUISING_EXTENSIONS = new Set([
   ...EVIDENCE_TYPE_RULES.flatMap((rule) => rule.extensions),
+  // Documentos que ya no se admiten pero siguen sirviendo para disfrazar.
+  'pdf',
   'exe',
   'bat',
   'cmd',

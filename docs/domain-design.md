@@ -374,7 +374,7 @@ Estas comprobaciones derivan de los criterios de aceptación de HU-08 y servirá
 
 **Requisito relacionado:** HU-06 — Como Usuario Colaborador, quiero aportar evidencias a un reporte para respaldar la información.
 **Origen de esta definición:** HU-06, T6 — Desarrollar pruebas unitarias para el rechazo de archivos no permitidos.
-**Estado:** Reglas implementadas y probadas en `web/src/lib/evidences/rules.ts`. **Los tipos y límites son una propuesta pendiente de confirmar con el PO (Iván) y con el resultado de HU-06/T1 (Ildefonso).** Almacenamiento, permisos y endpoints quedan para las restantes tareas de HU-06.
+**Estado:** Reglas implementadas y probadas en `web/src/lib/evidences/rules.ts`. Tipos y límites acordados en la revisión del contrato de HU-06/T4 (PR #13): **solo PNG, JPEG y WebP, sin PDF** (decisión del PO, Iván) y 10 MiB por archivo. Almacenamiento, permisos y endpoints quedan para las restantes tareas de HU-06.
 
 ### Módulo compartido
 
@@ -385,17 +385,17 @@ Cada archivo se describe como `EvidenceCandidate`: nombre y MIME declarados, tam
 - `validateEvidenceFile(candidate)` devuelve `{ ok: true, evidence }` con tipo, MIME y extensión normalizados, o `{ ok: false, code }`.
 - `validateEvidenceBatch(candidates)` devuelve `{ ok: true, evidences }` o `{ ok: false, errors }`, donde cada error indica el `index` del archivo (o `null` si afecta al envío completo). Valida todos los archivos y devuelve todos los rechazos. Un envío vacío es válido: la obligatoriedad de aportar evidencias corresponde a HU-06, no a este módulo.
 
-### Tipos y límites propuestos
+### Tipos y límites
 
-| Tipo | MIME              | Extensiones     | Firma (magic bytes)                       |
-| ---- | ----------------- | --------------- | ----------------------------------------- |
-| PNG  | `image/png`       | `.png`          | `89 50 4E 47 0D 0A 1A 0A` en el byte 0    |
-| JPEG | `image/jpeg`      | `.jpg`, `.jpeg` | `FF D8 FF` en el byte 0                   |
-| WebP | `image/webp`      | `.webp`         | `RIFF` en el byte 0 y `WEBP` en el byte 8 |
-| PDF  | `application/pdf` | `.pdf`          | `%PDF-` en el byte 0                      |
+| Tipo | MIME         | Extensiones     | Firma (magic bytes)                       |
+| ---- | ------------ | --------------- | ----------------------------------------- |
+| PNG  | `image/png`  | `.png`          | `89 50 4E 47 0D 0A 1A 0A` en el byte 0    |
+| JPEG | `image/jpeg` | `.jpg`, `.jpeg` | `FF D8 FF` en el byte 0                   |
+| WebP | `image/webp` | `.webp`         | `RIFF` en el byte 0 y `WEBP` en el byte 8 |
 
 - Tamaño máximo por archivo: `EVIDENCE_MAX_FILE_BYTES` = 10 MiB (10 485 760 bytes); el valor exacto se acepta y un byte más se rechaza.
-- Número máximo de archivos por envío: `EVIDENCE_MAX_FILES` = 5.
+- Número máximo de archivos: `EVIDENCE_MAX_FILES` = 5. `validateEvidenceBatch` lo aplica a cada envío; el contrato de HU-06/T4 lo fija además como máximo de evidencias por colaborador y reporte.
+- **El PDF no se admite** (decisión del PO para el Sprint 1): no se puede garantizar la eliminación de metadatos de las imágenes incrustadas. Un `.pdf` se rechaza como `EVIDENCE_TYPE_NOT_ALLOWED`, y `pdf` sigue contando como extensión que disfraza en segmentos intermedios (`informe.pdf.png`). Queda en el _Backlog_ para un _spike_ posterior.
 - Extensión y MIME se comparan sin distinguir mayúsculas; el MIME se recorta de espacios.
 
 ### Reglas y orden de comprobación
@@ -404,7 +404,7 @@ Se devuelve el primer fallo, en este orden:
 
 1. **Nombre.** Se rechaza si está vacío o solo tiene espacios, supera 255 caracteres, contiene `/` o `\`, es `.` o `..`, empieza por punto, termina en punto o espacio, o contiene caracteres de control (U+0000–U+001F, U+007F–U+009F) o de control bidireccional (U+202A–U+202E, U+2066–U+2069), usados para disfrazar extensiones.
 2. **Tamaño.** Debe ser un entero positivo y no superar el máximo.
-3. **Tipo.** La extensión final y el MIME declarado deben estar en la lista blanca. Se rechazan dobles extensiones: ningún segmento intermedio del nombre puede ser una extensión permitida ni una ejecutable o de script (`exe`, `bat`, `cmd`, `com`, `scr`, `msi`, `js`, `vbs`, `ps1`, `sh`, `jar`, `html`, `htm`, `svg`, `php`). Así se rechazan `factura.pdf.exe` y `foto.exe.png`, pero se aceptan `captura 2026.11.13.png` o `informe.final.pdf`.
+3. **Tipo.** La extensión final y el MIME declarado deben estar en la lista blanca. Se rechazan dobles extensiones: ningún segmento intermedio del nombre puede ser una extensión permitida ni una ejecutable o de script (`exe`, `bat`, `cmd`, `com`, `scr`, `msi`, `js`, `vbs`, `ps1`, `sh`, `jar`, `html`, `htm`, `svg`, `php`). Así se rechazan `factura.pdf.exe`, `informe.pdf.png` y `foto.exe.png`, pero se aceptan `captura 2026.11.13.png` o `informe.final.png`.
 4. **Coherencia.** Extensión y MIME deben corresponder al mismo tipo, y los magic bytes de la cabecera deben coincidir con ese tipo. La extensión y el MIME los declara el cliente; la firma comprueba el contenido real.
 
 ### Códigos de error
@@ -422,4 +422,4 @@ Los códigos son estables: T3 y T4 deben reutilizarlos en la interfaz y en la AP
 
 ### Fuera del alcance de T6
 
-Comprobar la firma no garantiza que el archivo sea inocuo. Quedan pendientes, para las tareas correspondientes de HU-06: análisis antivirus o de contenido activo en PDF, recodificación o eliminación de metadatos de imágenes, nombre de almacenamiento generado por el servidor (no usar el nombre del cliente como ruta), servicio y _bucket_ de almacenamiento (Supabase Storage sigue siendo la opción del [ADR-004](adr/0004-supabase-persistence.md)), control de acceso y relación de cada evidencia con su reporte y su autor.
+Comprobar la firma no garantiza que el archivo sea inocuo. Quedan pendientes, para las tareas correspondientes de HU-06: análisis antivirus, recodificación o eliminación de metadatos de imágenes, nombre de almacenamiento generado por el servidor (no usar el nombre del cliente como ruta), servicio y _bucket_ de almacenamiento (Supabase Storage sigue siendo la opción del [ADR-004](adr/0004-supabase-persistence.md)), control de acceso y relación de cada evidencia con su reporte y su autor.
