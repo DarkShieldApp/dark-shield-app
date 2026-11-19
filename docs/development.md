@@ -66,6 +66,18 @@ no acredita conexión SQL, tablas, RLS ni flujos de autenticación.
 El endpoint está descrito en la
 [documentación oficial de diagnóstico](https://supabase.com/kb/troubleshooting/how-do-i-check-gotrueapi-version-of-a-supabase-project-lQAnOR).
 
+### Comprobación manual de HU-05, HU-06 y HU-01
+
+HU-05/T5 añade pruebas de `prepareReportDraft`: URL web, campos obligatorios,
+límites de descripción y borrador normalizado. No prueban persistencia; HU-05 aún
+no tiene endpoint ni modelo. Para comprobar la interfaz, ejecutar `npm run dev:web`,
+abrir `http://localhost:3000` y usar **Crear reporte**. Un borrador válido indica
+que sigue en esta sesión; no crea un registro. En **Evidencias**, seleccionar
+imágenes PNG, JPEG o WebP permite verlas localmente; al recargar se descartan
+porque no se suben. El PDF ya no se admite y se descarta al validarlo. **Consultar reportes** indica que la API sigue
+pendiente, sin inventar resultados. HU-01/T9 describe el contrato previsto en
+[domain-design.md](domain-design.md#hu-01t4-y-hu-01t9--interfaz-y-mecanismo-de-consulta).
+
 ### Pruebas y cobertura
 
 Ejecutar desde la raíz:
@@ -92,6 +104,7 @@ declaraciones `.d.ts` dentro de ese ámbito. Actualmente son:
 - `src/lib/supabase/client.ts`: factoría del navegador.
 - `src/lib/evidences/rules.ts`: reglas de aceptación de evidencias (HU-06/T6).
 - `src/lib/evidences/selection.ts`: selección y validación de evidencias en el cliente (HU-06/T3).
+- `src/lib/reports/rules.ts`: validación del borrador de creación (HU-05/T5).
 - `src/server/supabase.ts`: factoría del servidor.
 - `scripts/lib/auth-health.ts`: petición y clasificación del diagnóstico.
 

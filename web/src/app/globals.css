@@ -194,3 +194,39 @@ textarea.form-control {
   font-size: 0.9rem;
   color: var(--text-muted);
 }
+
+.form-control-error {
+  border-color: #f87171;
+  background-color: rgba(248, 113, 113, 0.08);
+}
+
+.form-control-error:focus {
+  outline: 2px solid #f87171;
+  border-color: #f87171;
+}
+
+.field-error {
+  color: #fca5a5;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.error-summary {
+  margin-bottom: 1.25rem;
+  padding: 0.85rem 1rem;
+  border-radius: 8px;
+  background-color: rgba(248, 113, 113, 0.12);
+  border: 1px solid rgba(248, 113, 113, 0.4);
+  color: #fecaca;
+  font-size: 0.9rem;
+}
+
+.success-notice {
+  margin-top: 1.25rem;
+  padding: 0.9rem 1rem;
+  border-radius: 8px;
+  background-color: rgba(52, 211, 153, 0.12);
+  border: 1px solid rgba(52, 211, 153, 0.4);
+  color: #a7f3d0;
+  font-size: 0.9rem;
+}
