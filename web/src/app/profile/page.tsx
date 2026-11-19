@@ -2,7 +2,6 @@ import styles from './profile.module.css';
 
 // HU-10/T1: Profile view displaying user trust level.
 
-
 const exampleProfile = {
   displayName: 'Usuario de ejemplo',
   roleName: 'Colaborador',
@@ -27,9 +26,7 @@ export default function ProfilePage() {
         </header>
 
         <div className={styles.infoSection}>
-          <h2 className={styles.sectionTitle}>
-            Información de la cuenta
-          </h2>
+          <h2 className={styles.sectionTitle}>Información de la cuenta</h2>
 
           <div className={styles.infoRow}>
             <span>Nombre de usuario</span>
@@ -43,15 +40,11 @@ export default function ProfilePage() {
         </div>
 
         <div className={styles.trustSection}>
-          <h2 className={styles.sectionTitle}>
-            Nivel de confianza
-          </h2>
+          <h2 className={styles.sectionTitle}>Nivel de confianza</h2>
 
           <div className={styles.trustHeader}>
             <span>Confianza actual</span>
-            <strong className={styles.trustValue}>
-              {trustLevel} / 100
-            </strong>
+            <strong className={styles.trustValue}>{trustLevel} / 100</strong>
           </div>
 
           <div
@@ -69,9 +62,8 @@ export default function ProfilePage() {
           </div>
 
           <p className={styles.description}>
-            Tu nivel de confianza refleja tu puntuación
-            dentro de Dark-Shield y podrá utilizarse para
-            determinar las acciones que tienes permitidas.
+            Tu nivel de confianza refleja tu puntuación dentro de Dark-Shield y
+            podrá utilizarse para determinar las acciones que tienes permitidas.
           </p>
         </div>
       </section>
