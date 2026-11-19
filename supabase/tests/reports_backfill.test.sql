@@ -18,7 +18,11 @@ set display_name = 'Existing User',
     trust_level = 42
 where id = 'a1111111-1111-4111-8111-111111111111';
 
--- report_evidences references reports (rolled back with the transaction).
+-- Remove the later HU-08 dependency only within this historical replay.
+alter table public.report_assessments
+  drop constraint report_assessments_report_fkey;
+-- Remove the later HU-06 table (its FKs and policies depend on it) only
+-- within this historical replay.
 drop table public.report_evidences;
 drop table public.reports;
 

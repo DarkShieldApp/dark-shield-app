@@ -7,7 +7,11 @@ select plan(6);
 select ok((select cardinality(statements) > 0 from supabase_migrations.schema_migrations
   where version = '20261110154948'), 'CLI recorded the applied migration statements');
 
--- Later tables that reference profiles (rolled back with the transaction).
+-- Remove the later HU-08 dependency only within this historical replay.
+alter table public.report_assessments
+  drop constraint report_assessments_assessor_fkey;
+-- Remove the later HU-06 table (its FKs and policies depend on it) only
+-- within this historical replay.
 drop table public.report_evidences;
 alter table public.reports
   drop constraint reports_author_fkey;
