@@ -49,6 +49,10 @@ const SAMPLE_ROW_2 = {
 function createMockSupabaseQueryClient(options: {
   data?: unknown[];
   error?: Error | null;
+  /** Filas de `report_credibility_inputs` (HU-01/T7). Por defecto, ninguna. */
+  rpcData?: unknown;
+  rpcError?: { message: string };
+  rpcThrows?: unknown;
 }) {
   const queryBuilder: Record<string, unknown> = {};
 
@@ -75,11 +79,18 @@ function createMockSupabaseQueryClient(options: {
     );
   };
 
+  const rpc = vi.fn(async () => {
+    if (options.rpcThrows !== undefined) throw options.rpcThrows;
+    if (options.rpcError) return { data: null, error: options.rpcError };
+    return { data: options.rpcData ?? [], error: null };
+  });
+
   const client = {
     from: vi.fn(() => queryBuilder),
+    rpc,
   };
 
-  return { client: client as unknown as SupabaseClient, queryBuilder };
+  return { client: client as unknown as SupabaseClient, queryBuilder, rpc };
 }
 
 beforeEach(() => {
@@ -569,6 +580,7 @@ describe('queryReports (ejecución de consultas en servidor y casos límite)', (
       target_url: SAMPLE_ROW_1.page_key,
       page_key: SAMPLE_ROW_1.page_key,
       created_at: SAMPLE_ROW_1.created_at,
+      credibility: null,
     });
     // No expone author_id
     expect(
@@ -733,5 +745,216 @@ describe('endpoint GET /api/reports', () => {
     expect(res.status).toBe(503);
     const body = await res.json();
     expect(body.error.code).toBe('SERVICE_UNAVAILABLE');
+  });
+});
+
+// Agregados de `report_credibility_inputs` (formato de la RPC, snake_case).
+function credibilityRow(
+  reportId: string,
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    report_id: reportId,
+    report_created_at: '2026-11-18T10:00:00.000Z',
+    visible_evidences: 0,
+    latest_evidence_at: null,
+    validations: 0,
+    validation_trust_sum: 0,
+    invalidations: 0,
+    invalidation_trust_sum: 0,
+    latest_assessment_at: null,
+    ...overrides,
+  };
+}
+
+// Tres validaciones de confianza máxima: puntuación 80, nivel alto.
+const SUPPORTED_ROW_1 = credibilityRow(SAMPLE_ROW_1.id, {
+  validations: 3,
+  validation_trust_sum: 300,
+  latest_assessment_at: '2026-11-19T09:00:00.000Z',
+});
+
+describe('HU-01/T7 — credibilidad en la consulta de reportes', () => {
+  const PAGE = {
+    scope: 'page',
+    target: 'https://tienda.example.com/checkout',
+  } as const;
+
+  it('añade a cada reporte la credibilidad de su identificador', async () => {
+    const { client } = createMockSupabaseQueryClient({
+      data: [SAMPLE_ROW_1, SAMPLE_ROW_2],
+      rpcData: [SUPPORTED_ROW_1, credibilityRow(SAMPLE_ROW_2.id)],
+    });
+
+    const result = await queryReports(PAGE, client);
+
+    expect(result.items[0]?.credibility).toEqual({
+      level: 'high',
+      score: 80,
+      sufficientData: true,
+      updatedAt: '2026-11-19T09:00:00.000Z',
+      factors: {
+        visibleEvidences: 0,
+        validations: 3,
+        invalidations: 0,
+        assessors: 3,
+        supportWeight: 3,
+        againstWeight: 0,
+      },
+    });
+    expect(result.items[1]?.credibility).toMatchObject({
+      level: 'medium',
+      score: 50,
+      sufficientData: false,
+    });
+  });
+
+  it('relaciona por identificador sin distinguir mayúsculas', async () => {
+    const upperId = SAMPLE_ROW_1.id.toUpperCase();
+    const { client } = createMockSupabaseQueryClient({
+      data: [{ ...SAMPLE_ROW_1, id: upperId }],
+      rpcData: [SUPPORTED_ROW_1],
+    });
+
+    const result = await queryReports(PAGE, client);
+
+    expect(result.items[0]?.id).toBe(upperId);
+    expect(result.items[0]?.credibility?.level).toBe('high');
+  });
+
+  it('hace una sola RPC por página, sin la fila extra de la paginación', async () => {
+    const { client, rpc } = createMockSupabaseQueryClient({
+      data: [SAMPLE_ROW_1, SAMPLE_ROW_2],
+      rpcData: [SUPPORTED_ROW_1],
+    });
+
+    const result = await queryReports({ ...PAGE, limit: 1 }, client);
+
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith('report_credibility_inputs', {
+      report_ids: [SAMPLE_ROW_1.id],
+    });
+    expect(result.items).toHaveLength(1);
+    expect(result.nextCursor).not.toBeNull();
+  });
+
+  it('no llama a la RPC si la página no tiene reportes', async () => {
+    const { client, rpc } = createMockSupabaseQueryClient({ data: [] });
+
+    const result = await queryReports(PAGE, client);
+
+    expect(rpc).not.toHaveBeenCalled();
+    expect(result).toEqual({ items: [], nextCursor: null });
+  });
+
+  it('usa null para un reporte que no aparece en el resultado de credibilidad', async () => {
+    const { client } = createMockSupabaseQueryClient({
+      data: [SAMPLE_ROW_1, SAMPLE_ROW_2],
+      rpcData: [SUPPORTED_ROW_1],
+    });
+
+    const result = await queryReports(PAGE, client);
+
+    expect(result.items[0]?.credibility?.level).toBe('high');
+    expect(result.items[1]?.credibility).toBeNull();
+  });
+
+  it.each([
+    ['devuelve error', { rpcError: { message: 'RPC caída' } }],
+    ['lanza una excepción', { rpcThrows: new Error('red') }],
+    [
+      'devuelve agregados incoherentes',
+      {
+        rpcData: [
+          credibilityRow(SAMPLE_ROW_1.id, { validations: -1 }),
+        ] as unknown,
+      },
+    ],
+  ])(
+    'si la RPC %s, devuelve los reportes con credibilidad null y registra el fallo',
+    async (_case, rpcOptions) => {
+      const { client } = createMockSupabaseQueryClient({
+        data: [SAMPLE_ROW_1, SAMPLE_ROW_2],
+        ...rpcOptions,
+      });
+      const logError = vi.fn();
+
+      const result = await queryReports(PAGE, client, { logError });
+
+      expect(result.items.map(({ id }) => id)).toEqual([
+        SAMPLE_ROW_1.id,
+        SAMPLE_ROW_2.id,
+      ]);
+      expect(
+        result.items.every(({ credibility }) => credibility === null),
+      ).toBe(true);
+      expect(logError).toHaveBeenCalledTimes(1);
+      expect(logError).toHaveBeenCalledWith(
+        expect.stringContaining('credibilidad'),
+        expect.objectContaining({ name: 'CredibilityError' }),
+      );
+    },
+  );
+
+  it('registra el fallo con console.error si no se inyecta logError', async () => {
+    const { client } = createMockSupabaseQueryClient({
+      data: [SAMPLE_ROW_1],
+      rpcThrows: new Error('red'),
+    });
+    const consoleError = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => {});
+
+    const result = await queryReports(PAGE, client);
+
+    expect(result.items[0]?.credibility).toBeNull();
+    expect(consoleError).toHaveBeenCalledTimes(1);
+  });
+
+  it('GET /api/reports responde 200 con credibilidad null si la RPC falla', async () => {
+    const { client } = createMockSupabaseQueryClient({
+      data: [SAMPLE_ROW_1],
+      rpcError: { message: 'RPC caída' },
+    });
+    vi.spyOn(supabaseServer, 'createServerSupabaseClient').mockReturnValue(
+      client,
+    );
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const res = await GET(
+      new Request(
+        'http://localhost/api/reports?scope=page&target=https://tienda.example.com/checkout',
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.items).toHaveLength(1);
+    expect(body.items[0].credibility).toBeNull();
+  });
+
+  it('GET /api/reports incluye la credibilidad con el mismo cliente sin sesión', async () => {
+    const { client, rpc } = createMockSupabaseQueryClient({
+      data: [SAMPLE_ROW_1],
+      rpcData: [SUPPORTED_ROW_1],
+    });
+    const factory = vi
+      .spyOn(supabaseServer, 'createServerSupabaseClient')
+      .mockReturnValue(client);
+
+    const res = await GET(
+      new Request(
+        'http://localhost/api/reports?scope=page&target=https://tienda.example.com/checkout',
+      ),
+    );
+
+    expect(res.status).toBe(200);
+    expect(factory).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledTimes(1);
+    const body = await res.json();
+    expect(body.items[0].credibility).toMatchObject({
+      level: 'high',
+      sufficientData: true,
+    });
   });
 });

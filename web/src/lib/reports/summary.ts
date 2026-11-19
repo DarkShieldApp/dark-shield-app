@@ -1,16 +1,26 @@
 import { getCategoryLabel } from './categories';
-import type { ReportSummaryItem } from './query';
+import type {
+  ReportCredibilityLevel,
+  ReportCredibilitySummary,
+  ReportSummaryItem,
+} from './query';
 
 /**
- * Presentación del resumen de un reporte en el listado (HU-01/T6).
- * Solo transforma los campos públicos de `GET /api/reports`; el detalle
- * completo (HU-02) y la credibilidad (HU-01/T7) quedan fuera.
+ * Presentación del resumen de un reporte en el listado (HU-01/T6) y de su
+ * estado de credibilidad (HU-01/T7). Solo transforma los campos públicos de
+ * `GET /api/reports`; el detalle completo (HU-02) y la explicación de los
+ * factores (HU-09/T3) quedan fuera.
  */
 
 export const EXCERPT_MAX_LENGTH = 180;
 export const STEPS_MARKER = 'Pasos para reproducir:';
 export const COMMUNITY_NOTICE = 'Reporte comunitario, no es un veredicto';
 export const CREDIBILITY_UNAVAILABLE = 'Credibilidad no disponible';
+export const CREDIBILITY_INSUFFICIENT = 'Datos insuficientes';
+export const CREDIBILITY_LEVEL_LABELS: Record<ReportCredibilityLevel, string> =
+  { high: 'Alta', medium: 'Media', low: 'Baja' };
+export const CREDIBILITY_DYNAMIC_NOTICE =
+  'La credibilidad cambia con nuevas evidencias y valoraciones; no es una garantía';
 export const UNTITLED_REPORT = 'Reporte sin título';
 export const NO_DESCRIPTION = 'Sin descripción disponible.';
 export const UNKNOWN_DATE = 'Fecha no disponible';
@@ -63,6 +73,38 @@ export function buildExcerpt(
   return `${cut.replace(/[\s.,;:¡!¿?…-]+$/u, '')}…`;
 }
 
+export type CredibilityStatus =
+  'unavailable' | 'insufficient' | ReportCredibilityLevel;
+
+export interface CredibilityView {
+  /** Estado para estilos y para ampliar la explicación (HU-09/T3). */
+  status: CredibilityStatus;
+  /** Texto visible: el estado nunca se comunica solo con color. */
+  label: string;
+}
+
+/**
+ * Etiqueta del estado de credibilidad (HU-01/T7, reutilizable en HU-09/T3).
+ * Sin valor no se infiere nada. Sin datos suficientes confirmados
+ * (`sufficientData` distinto de `true`) es «Datos insuficientes», nunca un
+ * nivel, aunque `level` traiga otro valor. La puntuación no forma parte de la
+ * etiqueta: no es un veredicto.
+ */
+export function describeCredibility(
+  credibility: ReportCredibilitySummary | null | undefined,
+): CredibilityView {
+  if (!credibility) {
+    return { status: 'unavailable', label: CREDIBILITY_UNAVAILABLE };
+  }
+  if (credibility.sufficientData !== true) {
+    return { status: 'insufficient', label: CREDIBILITY_INSUFFICIENT };
+  }
+  return {
+    status: credibility.level,
+    label: CREDIBILITY_LEVEL_LABELS[credibility.level],
+  };
+}
+
 export interface ReportSummaryView {
   id: string;
   title: string;
@@ -71,6 +113,7 @@ export interface ReportSummaryView {
   dateTime: string;
   dateLabel: string;
   excerpt: string;
+  credibility: CredibilityView;
 }
 
 export function toReportSummaryView(
@@ -84,5 +127,6 @@ export function toReportSummaryView(
     dateTime: item.created_at,
     dateLabel: formatReportDate(item.created_at),
     excerpt: buildExcerpt(item.description) || NO_DESCRIPTION,
+    credibility: describeCredibility(item.credibility),
   };
 }

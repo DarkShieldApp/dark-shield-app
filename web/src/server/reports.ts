@@ -10,10 +10,12 @@ import {
 } from '../lib/reports/validation';
 import {
   QUERY_ERROR_CODES,
+  type ReportCredibilitySummary,
   type ReportQueryResult,
   type ReportQueryScope,
   type ReportSummaryItem,
 } from '../lib/reports/query';
+import { getReportsCredibility, type CredibilityResult } from './credibility';
 import { createAuthenticatedSupabaseClient, verifyBearer } from './session';
 import { createServerSupabaseClient } from './supabase';
 
@@ -487,9 +489,58 @@ export function parseAndValidateQueryParams(
   };
 }
 
+export interface QueryReportsOptions {
+  /** Registro de fallos de la credibilidad; por defecto, `console.error`. */
+  logError?: (message: string, error: unknown) => void;
+}
+
+function toCredibilitySummary(
+  result: CredibilityResult,
+): ReportCredibilitySummary {
+  return {
+    level: result.level,
+    score: result.score,
+    sufficientData: result.sufficientData,
+    updatedAt: result.updatedAt,
+    factors: result.factors,
+  };
+}
+
+/**
+ * HU-01/T7: credibilidad de la página con una sola RPC y el mismo cliente sin
+ * sesión. Si falla, se registra y cada reporte queda con `null`: la consulta
+ * no se convierte en error ni en lista vacía y no se inventa ningún valor.
+ */
+async function attachCredibility(
+  items: ReportSummaryItem[],
+  client: SupabaseClient,
+  logError: NonNullable<QueryReportsOptions['logError']>,
+): Promise<ReportSummaryItem[]> {
+  let byId = new Map<string, CredibilityResult>();
+  try {
+    byId = await getReportsCredibility(
+      items.map(({ id }) => id),
+      { client },
+    );
+  } catch (error) {
+    logError(
+      'No se pudo obtener la credibilidad de los reportes consultados',
+      error,
+    );
+  }
+  return items.map((item) => {
+    const result = byId.get(item.id.toLowerCase());
+    return {
+      ...item,
+      credibility: result ? toCredibilitySummary(result) : null,
+    };
+  });
+}
+
 export async function queryReports(
   rawParams: Record<string, unknown> | URLSearchParams,
   injectedClient?: SupabaseClient,
+  options: QueryReportsOptions = {},
 ): Promise<ReportQueryResult> {
   const query = parseAndValidateQueryParams(rawParams);
   const client = injectedClient ?? createServerSupabaseClient();
@@ -540,7 +591,7 @@ export async function queryReports(
   const hasMore = rows.length > query.limit;
   const pageRows = hasMore ? rows.slice(0, query.limit) : rows;
 
-  const items: ReportSummaryItem[] = pageRows.map((row) => ({
+  const baseItems: ReportSummaryItem[] = pageRows.map((row) => ({
     id: row.id,
     title: row.title,
     description: row.description,
@@ -549,6 +600,11 @@ export async function queryReports(
     page_key: row.page_key,
     created_at: row.created_at,
   }));
+  const items = await attachCredibility(
+    baseItems,
+    client,
+    options.logError ?? console.error,
+  );
 
   const lastItem = pageRows[pageRows.length - 1];
   const nextCursor =

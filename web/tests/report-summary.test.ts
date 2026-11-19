@@ -1,4 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, expectTypeOf, it, vi } from 'vitest';
+
+import type { CredibilityResult } from '../src/server/credibility';
 
 import {
   REPORT_CATEGORY_OPTIONS,
@@ -8,6 +10,7 @@ import {
 import {
   QUERY_ERROR_MESSAGES,
   resolveQueryState,
+  type ReportCredibilitySummary,
   type ReportSummaryItem,
   type ResolvedQueryState,
 } from '../src/lib/reports/query';
@@ -23,11 +26,16 @@ import {
   prepareQueryTarget,
 } from '../src/lib/reports/search';
 import {
+  CREDIBILITY_DYNAMIC_NOTICE,
+  CREDIBILITY_INSUFFICIENT,
+  CREDIBILITY_LEVEL_LABELS,
+  CREDIBILITY_UNAVAILABLE,
   EXCERPT_MAX_LENGTH,
   NO_DESCRIPTION,
   UNKNOWN_DATE,
   UNTITLED_REPORT,
   buildExcerpt,
+  describeCredibility,
   displayPageUrl,
   formatReportDate,
   toReportSummaryView,
@@ -155,7 +163,14 @@ describe('toReportSummaryView', () => {
       dateLabel: '19 de noviembre de 2026',
       excerpt:
         'Se marca automáticamente una casilla de suscripción recurrente.',
+      credibility: { status: 'unavailable', label: CREDIBILITY_UNAVAILABLE },
     });
+  });
+
+  it('incluye la etiqueta de credibilidad del reporte', () => {
+    expect(
+      toReportSummaryView(item({ credibility: credibility() })).credibility,
+    ).toEqual({ status: 'high', label: 'Alta' });
   });
 
   it('usa textos por defecto sin título, categoría ni descripción', () => {
@@ -222,6 +237,149 @@ describe('buildReportsRequestUrl', () => {
         5,
       ),
     ).toBe('/api/reports?scope=domain&target=example.com&limit=5&cursor=abc');
+  });
+});
+
+function credibility(
+  overrides: Partial<ReportCredibilitySummary> = {},
+): ReportCredibilitySummary {
+  return {
+    level: 'high',
+    score: 80,
+    sufficientData: true,
+    updatedAt: '2026-11-19T09:00:00.000Z',
+    factors: {
+      visibleEvidences: 0,
+      validations: 3,
+      invalidations: 0,
+      assessors: 3,
+      supportWeight: 3,
+      againstWeight: 0,
+    },
+    ...overrides,
+  };
+}
+
+describe('HU-01/T7 — tipo compartido de credibilidad', () => {
+  it('el resultado del servidor es asignable al resumen del cliente', () => {
+    expectTypeOf<CredibilityResult>().toExtend<ReportCredibilitySummary>();
+    expectTypeOf<ReportCredibilitySummary>().toExtend<CredibilityResult>();
+  });
+});
+
+describe('HU-01/T7 — describeCredibility', () => {
+  it.each([
+    [undefined, 'unavailable', CREDIBILITY_UNAVAILABLE],
+    [null, 'unavailable', CREDIBILITY_UNAVAILABLE],
+  ] as const)('sin credibilidad (%s) no la inventa', (value, status, label) => {
+    expect(describeCredibility(value)).toEqual({ status, label });
+  });
+
+  it.each([
+    ['high', 'Alta'],
+    ['medium', 'Media'],
+    ['low', 'Baja'],
+  ] as const)('con datos suficientes, nivel %s → «%s»', (level, label) => {
+    expect(describeCredibility(credibility({ level }))).toEqual({
+      status: level,
+      label,
+    });
+    expect(CREDIBILITY_LEVEL_LABELS[level]).toBe(label);
+  });
+
+  it.each(['medium', 'high', 'low'] as const)(
+    'sin datos suficientes muestra «Datos insuficientes» aunque level sea %s',
+    (level) => {
+      expect(
+        describeCredibility(credibility({ level, sufficientData: false })),
+      ).toEqual({ status: 'insufficient', label: CREDIBILITY_INSUFFICIENT });
+    },
+  );
+
+  it('trata como insuficiente una credibilidad sin sufficientData', () => {
+    const withoutFlag = credibility();
+    delete withoutFlag.sufficientData;
+    expect(describeCredibility(withoutFlag)).toEqual({
+      status: 'insufficient',
+      label: CREDIBILITY_INSUFFICIENT,
+    });
+  });
+
+  it('no usa la puntuación como veredicto en la etiqueta', () => {
+    const { label } = describeCredibility(credibility({ score: 97 }));
+    expect(label).not.toMatch(/\d/);
+  });
+
+  it('el aviso deja claro que es dinámica y no una garantía', () => {
+    expect(CREDIBILITY_DYNAMIC_NOTICE).toBe(
+      'La credibilidad cambia con nuevas evidencias y valoraciones; no es una garantía',
+    );
+  });
+});
+
+describe('HU-01/T7 — parseReportsResponse con credibilidad', () => {
+  it('acepta items sin el campo credibility', () => {
+    const body = { items: [item()], nextCursor: null };
+    const outcome = parseReportsResponse(true, body);
+    expect(outcome).toEqual({ result: body });
+    expect(outcome.result?.items[0]).not.toHaveProperty('credibility');
+  });
+
+  it('conserva credibility null', () => {
+    const body = { items: [item({ credibility: null })], nextCursor: null };
+    expect(parseReportsResponse(true, body)).toEqual({ result: body });
+  });
+
+  it('conserva una credibilidad bien formada, también sin factores', () => {
+    const withoutFactors = credibility({ sufficientData: false });
+    delete withoutFactors.factors;
+    const body = {
+      items: [
+        item({ credibility: credibility() }),
+        item({
+          id: 'bbbbbbbb-1111-2222-3333-444444444444',
+          credibility: withoutFactors,
+        }),
+      ],
+      nextCursor: null,
+    };
+    expect(parseReportsResponse(true, body)).toEqual({ result: body });
+  });
+
+  it.each([
+    ['un valor que no es objeto', 'alta'],
+    ['un nivel desconocido', { ...credibility(), level: 'very-high' }],
+    ['una puntuación fuera de rango', { ...credibility(), score: 120 }],
+    ['una puntuación no finita', { ...credibility(), score: Number.NaN }],
+    ['una puntuación ausente', { ...credibility(), score: undefined }],
+    ['updatedAt que no es cadena', { ...credibility(), updatedAt: 1 }],
+    ['sufficientData no booleano', { ...credibility(), sufficientData: 'no' }],
+    ['factors que no es objeto', { ...credibility(), factors: 'x' }],
+    [
+      'un factor no numérico',
+      {
+        ...credibility(),
+        factors: { ...credibility().factors, validations: '3' },
+      },
+    ],
+  ])('normaliza a null %s sin descartar la respuesta', (_case, malformed) => {
+    const good = item({
+      id: 'bbbbbbbb-1111-2222-3333-444444444444',
+      credibility: credibility(),
+    });
+    const bad = {
+      ...item(),
+      credibility: malformed,
+    } as unknown as ReportSummaryItem;
+
+    expect(
+      parseReportsResponse(true, { items: [bad, good], nextCursor: 'c1' }),
+    ).toEqual({
+      result: {
+        items: [{ ...item(), credibility: null }, good],
+        nextCursor: 'c1',
+      },
+    });
   });
 });
 

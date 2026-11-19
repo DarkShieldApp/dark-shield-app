@@ -1,6 +1,7 @@
 import {
   QUERY_ERROR_CODES,
   QUERY_ERROR_MESSAGES,
+  type ReportCredibilitySummary,
   type ReportQueryResult,
   type ReportQueryScope,
   type ReportSummaryItem,
@@ -76,6 +77,58 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
+const CREDIBILITY_LEVELS: readonly unknown[] = ['low', 'medium', 'high'];
+const CREDIBILITY_FACTOR_KEYS = [
+  'visibleEvidences',
+  'validations',
+  'invalidations',
+  'assessors',
+  'supportWeight',
+  'againstWeight',
+] as const;
+
+const isFiniteNumber = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value);
+
+function isCredibilitySummary(
+  value: unknown,
+): value is ReportCredibilitySummary {
+  return (
+    isRecord(value) &&
+    CREDIBILITY_LEVELS.includes(value.level) &&
+    isFiniteNumber(value.score) &&
+    value.score >= 0 &&
+    value.score <= 100 &&
+    typeof value.updatedAt === 'string' &&
+    (value.sufficientData === undefined ||
+      typeof value.sufficientData === 'boolean') &&
+    (value.factors === undefined || isCredibilityFactors(value.factors))
+  );
+}
+
+function isCredibilityFactors(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    CREDIBILITY_FACTOR_KEYS.every((key) => isFiniteNumber(value[key]))
+  );
+}
+
+/**
+ * HU-01/T7: una credibilidad mal formada no invalida la respuesta; ese
+ * reporte se muestra como «Credibilidad no disponible» (`null`).
+ */
+function normalizeCredibility(item: ReportSummaryItem): ReportSummaryItem {
+  const { credibility } = item;
+  if (
+    credibility === undefined ||
+    credibility === null ||
+    isCredibilitySummary(credibility)
+  ) {
+    return item;
+  }
+  return { ...item, credibility: null };
+}
+
 function isSummaryItem(value: unknown): value is ReportSummaryItem {
   return (
     isRecord(value) &&
@@ -105,7 +158,12 @@ export function parseReportsResponse(
       body.items.every(isSummaryItem) &&
       (body.nextCursor === null || typeof body.nextCursor === 'string')
     ) {
-      return { result: { items: body.items, nextCursor: body.nextCursor } };
+      return {
+        result: {
+          items: body.items.map(normalizeCredibility),
+          nextCursor: body.nextCursor,
+        },
+      };
     }
     return {
       error: {
