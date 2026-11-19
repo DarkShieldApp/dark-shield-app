@@ -106,6 +106,8 @@ declaraciones `.d.ts` dentro de ese ámbito. Actualmente son:
 - `src/lib/evidences/selection.ts`: selección y validación de evidencias en el cliente (HU-06/T3).
 - `src/lib/reports/rules.ts`: validación del borrador de creación (HU-05/T5).
 - `src/server/supabase.ts`: factoría del servidor.
+- `src/server/evidences.ts`: endpoints de evidencias, autorización y compensación (HU-06/T4).
+- `src/server/evidence-images.ts`: recodificación de evidencias con `sharp` para eliminar metadatos (HU-06/T4).
 - `scripts/lib/auth-health.ts`: petición y clasificación del diagnóstico.
 
 `src/server/profiles.ts` contiene únicamente los tipos `Profile`, `Role` y `RoleCode`; no tiene lógica
