@@ -56,9 +56,7 @@ de Supabase. No hay RPC, cliente privilegiado ni acceso autorizado de aplicació
 ni siquiera de lectura. El propietario SQL conserva acceso para migraciones y
 pruebas; `service_role` puede eludir RLS, por lo que su ACL revocada es necesaria.
 
-No se deducen permisos del rol `collaborator`, del perfil activo ni de un valor de
-confianza. Quedan por acordar con HU-14/HU-11/HU-10: identidad y sesiones, permisos
-efectivos, condición de cuenta activa y umbral de confianza. También quedan
+HU-14/T3 entrega el permiso base `assessments.submit` para perfiles activos. HU-08 deberá combinarlo con la sesión y el umbral que acuerde HU-10 antes de abrir la escritura. Véase el [contrato de autorización](api/authorization.md). También quedan
 pendientes repeticiones, cambios/retiradas, reportes propios y estados elegibles
 del reporte (HU-05). HU-09 debe definir el contrato de credibilidad. Todo ello
 bloquea abrir las operaciones correspondientes de HU-08/T4.

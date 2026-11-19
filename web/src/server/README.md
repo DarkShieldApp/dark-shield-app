@@ -17,5 +17,9 @@ servidor. Refleja la fila SQL, con UUID y fechas como cadenas JSON; no valida
 entradas ni crea un cliente, servicio CRUD o sesión. Mantenerlo alineado con las
 migraciones. La integridad y la autorización inicial se verifican en PostgreSQL.
 
-Todavía no hay sesiones ni operaciones de negocio en Next.js. Uso y límites de
-la factoría en [la guía de desarrollo](../../../docs/development.md#clientes-supabase).
+La factoría de servidor recibe opcionalmente un Bearer. `session.ts` verifica su identidad
+con `getUser(token)`. Reportes y autorización comparten esa comprobación. Las rutas
+de permisos delegan en `authorization.ts`, que valida la entrada, comprueba el permiso
+base y llama a PostgreSQL con el mismo cliente. Las RPC administrativas vuelven a
+comprobar al actor. Véanse los [contratos HTTP](../../../docs/api/authorization.md)
+y la [guía de desarrollo](../../../docs/development.md#clientes-supabase).

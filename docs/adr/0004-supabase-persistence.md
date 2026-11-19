@@ -1,7 +1,7 @@
 # ADR-004 — Persistencia con Supabase
 
 - **Fecha:** 9 de noviembre de 2026.
-- **Estado:** Supabase y Supabase Auth adoptados; SDK, CLI y perfil de usuario HU-14/T1 implementados el 10 de noviembre de 2026. T2 añade catálogo y rol principal el 11 de noviembre de 2026. Autenticación, permisos y las restantes entidades siguen pendientes.
+- **Estado:** Supabase y Supabase Auth adoptados; SDK, CLI y perfil de usuario HU-14/T1 implementados el 10 de noviembre de 2026. T2 añade catálogo y rol principal el 11 de noviembre de 2026. T3 añade permisos efectivos y administración auditada. El repositorio también contiene reportes, valoraciones y evidencias. HU-11 mantiene pendiente el flujo de sesiones.
 
 ## Contexto
 
@@ -9,7 +9,7 @@ El ConOps requiere conservar usuarios, reportes, evidencias, validaciones y otro
 
 ## Decisión
 
-Usar **Supabase / PostgreSQL** para la persistencia y reservar `supabase/migrations/` para cambios SQL versionados. **Supabase Auth** es el sistema elegido para HU-11; sus flujos todavía no están implementados. **Supabase Storage** sigue siendo una opción para las evidencias de HU-06.
+Usar **Supabase / PostgreSQL** para la persistencia y reservar `supabase/migrations/` para cambios SQL versionados. **Supabase Auth** es el sistema elegido para HU-11; sus flujos todavía no están implementados. El contrato de HU-06 prevé un bucket privado en **Supabase Storage**.
 
 La lógica de negocio se centralizará en el servidor web. Al crear tablas expuestas se deberán diseñar las políticas RLS correspondientes, además de autorizar operaciones en los puntos adecuados. Las credenciales con privilegios y los secretos no estarán accesibles desde la extensión o el frontend.
 
@@ -21,7 +21,7 @@ legal o anonimización exige un procedimiento específico que considere todas la
 referencias y los datos de Auth, fuera del alcance de T1.
 
 La API solo concede lectura del perfil propio activo mediante grants explícitos
-y RLS. No hay escritura pública ni operaciones administrativas. La función del
+y RLS. T1 revoca la escritura directa. La función del
 trigger de Auth usa privilegios del propietario porque Auth no puede insertar
 perfiles directamente: esquema `private` no expuesto, `search_path` vacío,
 referencias cualificadas y ejecución pública revocada. Las pruebas pgTAP verifican
@@ -38,17 +38,29 @@ a perfiles anteriores y conserva los triggers de T1, ampliando solo la comparaci
 de fechas para incluir el rol. Los metadatos Auth no intervienen en la asignación.
 
 El catálogo tiene RLS y solo lectura autenticada; se revocan los grants por defecto.
-No hay tabla intermedia, permisos ni jerarquía implícita. Esta decisión mantiene
-un rol principal sin excluir futuras capacidades de colaboración de administradores
-y desarrolladores: T3 definirá permisos explícitos, administración y auditoría.
-No cambia la gestión de sesiones (HU-11) ni reglas de confianza (HU-10/HU-08).
-Las dos migraciones requieren despliegue posterior autorizado al remoto compartido;
-esta tarea no aplica cambios remotos.
+El perfil conserva un solo rol. La matriz de T3 asocia roles y capacidades de forma explícita.
+
+## Autorización por operación (HU-14/T3)
+
+Next.js verifica el Bearer con Auth y consulta las capacidades actuales usando el
+mismo cliente publicable. PostgreSQL acepta cinco RPC públicas `SECURITY INVOKER`.
+Delegan en funciones específicas de `authorization_internal`, fuera de la Data API,
+con SQL estático, `search_path` vacío y permisos de ejecución explícitos. El esquema
+`private` sigue cerrado. Las comprobaciones parten de `auth.uid()`; solo el listado
+administrativo puede proyectar perfiles ajenos. Así se evita la recursión de RLS y
+se conservan las políticas existentes de perfiles y evidencias.
+
+El coste de serializar escrituras administrativas es aceptable para estas operaciones
+poco frecuentes. Todas adquieren el bloqueo de la fila del rol admin en el mismo
+orden y revalidan al actor bajo bloqueo de perfil. Un cambio de rol conserva al actor
+como administrador activo porque el destino debe ser distinto. La auditoría comparte
+la transacción y los no-op conservan las fechas. El propietario SQL sigue siendo una
+frontera de confianza para migraciones y bootstrap. Véase la [guía operativa](../../supabase/README.md).
 
 ## Consecuencias y asuntos abiertos
 
 - El perfil tiene su esquema, migración y política inicial. Acordar las restantes entidades, relaciones y políticas al desarrollar sus HU.
-- Definir sesiones, acceso autorizado y denegado, buckets y tamaño/formato de evidencias cuando se necesiten.
+- Implementar las sesiones y el flujo de Storage según el contrato HU-06 ya acordado.
 - Las claves publicables **no** sustituyen RLS; las claves secretas o de `service_role` tienen privilegios especiales y deben permanecer bajo control del servidor.
 - El plan Free puede facilitar el arranque, pero sus límites de capacidad, transferencia, almacenamiento o inactividad deberán revisarse antes de dimensionar. El proyecto remoto se crea manualmente y su configuración pública se mantiene en `web/.env`, fuera de Git; esta preparación no modifica su esquema.
 - La confianza y credibilidad son reglas propias de DarkShield; PostgreSQL no las calcula automáticamente.

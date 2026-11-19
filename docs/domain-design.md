@@ -1,7 +1,6 @@
 # Diseño del dominio
 
-HU-14/T1 implementa el perfil y T2 su rol principal persistente. T3 (permisos)
-sigue pendiente; estas tareas no completan la historia HU-14.
+HU-14/T1 implementa el perfil, T2 su rol principal y T3 los permisos base y las operaciones administrativas auditadas.
 
 ## Identidad y perfil
 
@@ -49,16 +48,25 @@ de fechas incluye `role_code` entre los cambios efectivos.
 
 Son roles de aplicación, distintos de los roles PostgreSQL/Supabase o permisos
 de GitHub. El consumidor sin cuenta del ConOps no es un cuarto rol persistente.
-No hay jerarquía ni exclusión de capacidades: administradores y desarrolladores
-podrán colaborar si T3 les concede los permisos correspondientes. Leer el catálogo
-o tener un código de rol no autoriza ninguna acción por sí mismo.
 
-RLS y ACL permiten a `authenticated` únicamente leer el catálogo público. `anon`
-no tiene acceso; no hay escritura pública sobre roles ni perfiles, ni RPC de
-administración. El propietario SQL gestiona las migraciones. T3 definirá la
-matriz de permisos, autorización, capacidades acumulativas, cambio administrativo
-de roles y auditoría. HU-11 resolverá registro, login, sesiones, cookies y rutas;
-HU-10/HU-08 concretarán confianza efectiva, umbrales y validaciones autorizadas.
+## Permisos base y administración (HU-14/T3)
+
+| Permiso                    | collaborator | developer | admin |
+| -------------------------- | ------------ | --------- | ----- |
+| `reports.create`           | Sí           | Sí        | Sí    |
+| `evidences.add`            | Sí           | Sí        | Sí    |
+| `assessments.submit`       | Sí           | Sí        | Sí    |
+| `users.read`               | —            | —         | Sí    |
+| `users.change_role`        | —            | —         | Sí    |
+| `roles.manage_permissions` | —            | —         | Sí    |
+
+Cada fila representa una asignación explícita de la matriz inicial. El alta conserva
+el rol `collaborator`. Una operación consulta el perfil activo y las asignaciones
+vigentes en PostgreSQL. Las tres capacidades administrativas son fijas.
+Un administrador activo puede cambiar el rol de otro perfil o las asignaciones de
+colaboración. Cada cambio efectivo registra el actor, objetivo y transición
+en la misma transacción. Véanse los [contratos HTTP y por HU](api/authorization.md)
+y la [decisión de persistencia](adr/0004-supabase-persistence.md).
 
 ## Confianza y estado de cuenta
 
@@ -247,14 +255,12 @@ lista vacía. Los datos de la respuesta se renderizan como reportes comunicados,
 sin inferir credibilidad cuando el campo no esté disponible.
 
 **Estado de implementación:** HU-01/T4 aporta la estructura visual del buscador,
-la navegación y los estados iniciales. El endpoint, los resultados, los filtros
-de ámbito y la paginación requieren HU-01/T3 y el modelo de HU-05 y permanecen
-pendientes. La pantalla indica esta limitación y no presenta datos de ejemplo.
+la navegación y los estados iniciales. El handler GET ya implementa búsqueda, selección de ámbito y paginación contra el modelo de HU-05. La conexión de la pantalla de consulta con ese handler sigue pendiente.
 
 #### Integración y decisiones de implementación
 
 - HU-05 debe hacer consultable la página afectada por cada reporte con la clave definida aquí; la forma de persistir y derivar esa clave se resuelve al diseñar el modelo de reportes.
-- HU-01/T3 implementa la validación, búsqueda, paginación y proyección; HU-01/T4 consume el contrato desde la interfaz. La extensión seguirá este contrato cuando HU-17 entre en alcance.
+- El servidor implementa validación, búsqueda, paginación y proyección. Conectar el buscador de HU-01/T4 con ese contrato sigue pendiente. La extensión lo consumirá al abordar HU-17.
 - El uso de la Public Suffix List requiere una implementación mantenida y una política para actualizar sus datos; no se debe asumir que los dos últimos componentes separados por puntos identifican siempre el dominio registrable.
 - Los límites de página ayudan a acotar respuestas, pero no sustituyen los controles contra extracción masiva previstos por el ConOps.
 
@@ -450,11 +456,11 @@ Queda para la parte 2 de T3: la subida directa a Storage y la confirmación, que
 
 ### Fuera del alcance de T6
 
-Comprobar la firma no garantiza que el archivo sea inocuo. Quedan pendientes, para las tareas correspondientes de HU-06: análisis antivirus, recodificación o eliminación de metadatos de imágenes, nombre de almacenamiento generado por el servidor (no usar el nombre del cliente como ruta), servicio y _bucket_ de almacenamiento (Supabase Storage sigue siendo la opción del [ADR-004](adr/0004-supabase-persistence.md)), control de acceso y relación de cada evidencia con su reporte y su autor.
+Comprobar la firma no garantiza que el archivo sea inocuo. Quedan pendientes, para las tareas correspondientes de HU-06: análisis antivirus, recodificación o eliminación de metadatos de imágenes, nombre de almacenamiento generado por el servidor (no usar el nombre del cliente como ruta), configuración del bucket privado de Supabase Storage y conexión del flujo de subida. El modelo HU-06/T4a ya vincula cada evidencia con su reporte y autor.
 
 ### Contrato de persistencia y API (HU-06/T4)
 
-**Estado:** acordado en la revisión de la PR #13 (19 de noviembre de 2026): preguntas 1–4 con Gregorio (HU-05/T4), 5–7 con Ildefonso (HU-06/T1 y HU-11) y 8–11 con Iván (HU-09/T2 y PO). Solo queda pendiente cómo eliminar los metadatos con la subida directa (ver más abajo). Se implementa en tres piezas: el modelo y su RLS (HU-06/T4a), la lectura pública de reportes (respuesta 2, en una PR aparte porque toca HU-05/T4) y el endpoint con el _bucket_ y sus políticas (HU-06/T4).
+**Estado:** acordado en la revisión de la PR #13 (19 de noviembre de 2026): preguntas 1–4 con Gregorio (HU-05/T4), 5–7 con Ildefonso (HU-06/T1 y HU-11) y 8–11 con Iván (HU-09/T2 y PO). Solo queda pendiente cómo eliminar los metadatos con la subida directa (ver más abajo). Se implementa en tres piezas: el modelo y su RLS (HU-06/T4a), la lectura pública de reportes (respuesta 2, integrada en la PR #21) y el endpoint con el _bucket_ y sus políticas (HU-06/T4).
 
 #### Decisiones
 
