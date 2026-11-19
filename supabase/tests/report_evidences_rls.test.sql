@@ -277,6 +277,20 @@ select throws_ok($$update public.report_evidences set original_name = 'otro.png'
 select throws_ok($$delete from public.report_evidences$$,
   '42501', null, 'Evidences cannot be deleted directly');
 
+-- The uploader sees all of their own evidences, hidden ones and those of
+-- reports they can no longer read included (the Storage delete policy relies
+-- on it to tell registered objects apart).
+select set_config('request.jwt.claims',
+  '{"sub":"b2222222-2222-4222-8222-222222222222","role":"authenticated"}', true);
+select results_eq(
+  $$select id from public.report_evidences
+    where uploaded_by = 'b2222222-2222-4222-8222-222222222222' order by id$$,
+  $$values ('e1111111-1111-4111-8111-111111111111'::uuid),
+           ('e2222222-2222-4222-8222-222222222222'::uuid),
+           ('e3333333-3333-4333-8333-333333333333'::uuid)$$,
+  'The uploader sees their own hidden evidences'
+);
+
 -- Impersonating a collaborator who is at the limit fails on RLS, without
 -- revealing how many evidences that collaborator has.
 select set_config('request.jwt.claims',
