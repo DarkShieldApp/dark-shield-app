@@ -592,7 +592,7 @@ Las pruebas `profiles_backfill`, `reports_backfill` y `roles_backfill` reaplican
 
 **Requisito relacionado:** HU-09 — Consultar la credibilidad de un reporte.
 **Origen de esta definición:** HU-09, T1 — Diseñar un algoritmo de ponderación que distinga entre votos de usuarios según su nivel de confianza.
-**Estado:** diseño. No incluye código de producción ni migraciones: la implementación corresponde a HU-09/T2 (cálculo y acceso a datos), la explicación de factores a HU-09/T3, la invocación tras guardar una evidencia a HU-06/T5 y la presentación en el listado a HU-01/T7. Respeta el contrato acordado en la PR #13 (fila «Credibilidad (T5)» de las decisiones de HU-06/T4) y tiene en cuenta HU-10/T2–T3 (PR #28).
+**Estado:** diseño (T1) e **implementado para HU-09/T2** (cálculo y acceso a datos; véase «Implementación (HU-09/T2)»). Quedan pendientes la explicación de factores (HU-09/T3), la invocación tras guardar una evidencia (HU-06/T5) o una valoración (HU-08/T4 y T7) y la presentación en el listado (HU-01/T7). Respeta el contrato acordado en la PR #13 (fila «Credibilidad (T5)» de las decisiones de HU-06/T4) y tiene en cuenta HU-10/T2–T3 (PR #28).
 
 ### Criterios que debe cumplir
 
@@ -721,8 +721,8 @@ Mostrar el nivel con texto (no solo color), la indicación «Datos insuficientes
 | Riesgo                                       | Regla del algoritmo                                                                                                                                                                                                                         |
 | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | El autor valora su propio reporte            | Se ignora (`assessor_id = reports.author_id`), aunque HU-08 lo llegue a permitir o un operador SQL lo inserte. Sus **evidencias** sí cuentan, pero están acotadas y no generan datos suficientes.                                           |
-| Valoraciones repetidas                       | HU-08 aún no lo ha decidido (no hay `UNIQUE (report_id, assessor_id)`). El algoritmo supone **«solo la última por valorador»**: es equivalente si HU-08 impone unicidad y sigue siendo correcto si guarda historial.                        |
-| Cambio de opinión                            | Cuenta la última acción. Si HU-08 añade retirada, una valoración retirada no cuenta (véase «Pendiente de HU-08»).                                                                                                                           |
+| Valoraciones repetidas                       | **Solo cuenta la última por valorador** (D1). No hay `UNIQUE (report_id, assessor_id)`: es equivalente si HU-08/T4 impone unicidad y sigue siendo correcto si guarda historial.                                                             |
+| Cambio de opinión                            | Cuenta la última acción (D1). No hay retirada en el Sprint 1 (D2); si HU-08 la añade, una valoración retirada dejará de contar.                                                                                                             |
 | Muchas evidencias                            | Máximo 5 por colaborador y reporte (_trigger_ de HU-06), contenido único por reporte (`sha256`) y tope de 1,0 en la masa de evidencias: inundar de evidencias no supera 67.                                                                 |
 | Evidencias inapropiadas                      | La moderación las oculta y dejan de contar.                                                                                                                                                                                                 |
 | Cuentas desactivadas                         | Sus valoraciones dejan de contar mientras estén inactivas; vuelven a contar si se reactivan (el cálculo parte siempre del estado actual).                                                                                                   |
@@ -816,16 +816,74 @@ Propiedades que también deben probarse:
 
 Cualquier señal futura (IA, informes de moderación, etc.) entra como un término acotado más en `P` o en `N`, con un tope que impida alcanzar `sufficientData` por sí sola, de modo que la credibilidad pueda apoyarse en ella sin depender de ella. Los pesos y umbrales son constantes con nombre en `credibility.ts`; cambiarlos exige actualizar esta tabla de casos.
 
+### Implementación (HU-09/T2)
+
+#### Decisiones del PO
+
+Aprobado por el PO, 19/11/2026:
+
+| #   | Decisión                       | Regla aplicada                                                                                                                                                                                                                                                     |
+| --- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| D1  | Repetición y cambio de opinión | Cuenta solo la **última** valoración de cada valorador en el reporte (`created_at` descendente, `id` como desempate). No se añade `UNIQUE (report_id, assessor_id)`: HU-08/T4 decide si guarda historial o impone unicidad; el cálculo es correcto en ambos casos. |
+| D2  | Retirada                       | No hay retirada de valoraciones en el Sprint 1. La función interna no la excluye; un comentario en la migración indica dónde hacerlo si HU-08 la añade.                                                                                                            |
+| D3  | Reportes propios               | La valoración del autor (`assessor_id = reports.author_id`) se ignora en el cálculo. HU-08/T4 deberá además rechazarla al registrar.                                                                                                                               |
+| D4  | Revocación                     | Retirar `assessments.submit` o bajar la confianza por debajo del mínimo **no** anula las valoraciones ya emitidas. El cálculo no vuelve a comprobar permisos; sí excluye los perfiles inactivos (`is_active = false`) y usa el `trust_level` actual.               |
+| D5  | Acceso                         | `credibility_internal.report_inputs` es la primera función con lectura de `report_assessments`. La tabla sigue cerrada a `anon`, `authenticated` y `service_role`, y la función devuelve solo agregados.                                                           |
+| D6  | Estados de reporte             | Aún no existen; no se filtra por estado. El envoltorio `public.*` respeta la RLS de `reports`, de modo que cuando existan estados se aplicarán solos.                                                                                                              |
+
+#### Piezas
+
+- **Migración** `supabase/migrations/20261119140000_create_report_credibility_inputs.sql`: esquema `credibility_internal` (no expuesto; `usage` solo para `anon` y `authenticated`), `credibility_internal.report_inputs(uuid[])` (`SECURITY DEFINER`, `STABLE`, `search_path = ''`, sin SQL dinámico) y `public.report_credibility_inputs(uuid[])` (`SECURITY INVOKER`, filtra los identificadores por la RLS de `reports`). Ambas rechazan `null` o más de 100 identificadores con `22023` y devuelven una fila por reporte existente y visible, con exactamente las columnas de «Acceso a datos». `execute` solo para `anon` y `authenticated`. No cambia los privilegios de `report_assessments`.
+- **Servidor** `web/src/server/credibility.ts` (`server-only`): constantes con nombre de pesos y umbrales, `computeCredibility(inputs)` (pura), `recalculateReportCredibility(reportId, context?, options?)` y `getReportsCredibility(reportIds, options?)`. `options` es un tercer parámetro opcional y aditivo `{ client?, logError? }`; por defecto se usa `createServerSupabaseClient()` sin sesión, porque los agregados son públicos.
+- **Pruebas:** `supabase/tests/report_credibility_inputs.test.sql` (forma, privilegios, agregados de los casos con base de datos, límite y RLS) y `web/tests/credibility.test.ts` (los 23 casos, las propiedades y los errores).
+
+#### Errores
+
+Ninguna función inventa credibilidad: si no puede calcularla lanza `CredibilityError` con un `code` estable.
+
+| `code`               | Cuándo                                                                                                                                                     |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `INVALID_INPUT`      | Identificador que no es UUID, lista que no es un array o más de 100 identificadores distintos.                                                             |
+| `NOT_FOUND`          | `recalculateReportCredibility`: el reporte no existe o quien llama no puede verlo.                                                                         |
+| `UNAVAILABLE`        | Configuración de Supabase, red o RPC no disponibles (el error original va en `cause`).                                                                     |
+| `INVALID_AGGREGATES` | Respuesta mal formada o agregados incoherentes (recuentos negativos, suma de confianza fuera de `[n, 100·n]`, fechas que no concuerdan con los recuentos). |
+
+`getReportsCredibility` devuelve un `Map` por identificador en minúsculas y omite los reportes inexistentes o no visibles; no registra nada (decide quien llama). `recalculateReportCredibility` registra cualquier fallo con su `context` (causa y `triggerId`) antes de relanzarlo.
+
+#### Cómo invocarlo tras guardar (HU-06/T5, HU-08/T4)
+
+Después de persistir y antes de responder, sin que un fallo cambie la respuesta:
+
+```ts
+import { recalculateReportCredibility } from '@/server/credibility';
+
+try {
+  await recalculateReportCredibility(reportId, {
+    cause: 'evidence_added', // o 'validation_added'
+    triggerId: evidence.id, // o el id de la valoración
+  });
+} catch {
+  // Ya registrado por recalculateReportCredibility; la respuesta no cambia.
+}
+```
+
+En la confirmación de evidencias encaja en `EvidenceServiceOptions.onEvidenceSaved` ([docs/api/evidences.md](api/evidences.md)). Como el cálculo no persiste nada, la llamada solo sirve hoy para registrar fallos y comprobar que el reporte es calculable; HU-09/T3 y HU-01/T7 obtienen el valor actual al leer. Esta tarea no conecta ningún _hook_ ni la interfaz.
+
+#### Límites conocidos
+
+- `updatedAt` se devuelve en ISO 8601 con precisión de milisegundos.
+- `credibility_internal.report_inputs` necesita `execute` para `anon` y `authenticated` porque el envoltorio es `SECURITY INVOKER` (el mismo patrón que `authorization_internal`). PostgREST no expone ese esquema; invocada directamente desde SQL solo omitiría el filtro de visibilidad de `reports` y seguiría devolviendo agregados. Hoy todos los reportes son públicos (D6).
+
 ### Pendiente de HU-08 (Mario Polaino)
 
-Para integrar las valoraciones hace falta acordar con HU-08:
+Puntos que había que acordar con HU-08 y su estado tras HU-09/T2:
 
-1. **Cardinalidad:** `UNIQUE (report_id, assessor_id)` o historial. El algoritmo funciona con ambos («solo la última por valorador»); si se guarda historial, conviene un índice `(report_id, assessor_id, created_at desc)`.
-2. **Retirada:** si se permite, cómo se representa (borrado, `withdrawn_at`, etc.) para que la función interna la excluya.
-3. **Reportes propios:** rechazarlos al registrar; el algoritmo ya los ignora.
-4. **Umbral de confianza para valorar** (con HU-10) y confirmar que retirar `assessments.submit` no anula las valoraciones ya emitidas, porque el cálculo no vuelve a comprobar permisos.
-5. **Estados del reporte** que impidan valorar (HU-05).
-6. **Invocación:** después de registrar una valoración, llamar a `recalculateReportCredibility(reportId, { cause: 'validation_added', triggerId: assessmentId })` dentro de un `try/catch` que registre el fallo sin cambiar la respuesta, como en la confirmación de evidencias.
-7. **Lectura de la tabla cerrada:** acordar que `credibility_internal.report_inputs` lea `report_assessments` para devolver solo agregados. La tabla sigue cerrada a los roles de la API, pero sería la primera función con acceso de lectura; las pruebas pgTAP de HU-09/T2 deben comprobar que no expone filas ni identidades.
+1. ~~**Cardinalidad:** `UNIQUE (report_id, assessor_id)` o historial.~~ **Resuelto (D1):** cuenta la última por valorador; HU-08/T4 decide si guarda historial o impone unicidad. Si guarda historial, conviene un índice `(report_id, assessor_id, created_at desc)`.
+2. ~~**Retirada.**~~ **Resuelto (D2):** no hay retirada en el Sprint 1. Si se añade, la función interna deberá excluirla (lugar señalado en la migración).
+3. ~~**Reportes propios.**~~ **Resuelto (D3):** el cálculo los ignora; HU-08/T4 deberá rechazarlos al registrar.
+4. ~~**Umbral de confianza y revocación.**~~ **Resuelto (D4):** la revocación no anula valoraciones emitidas; se excluyen los perfiles inactivos y se usa la confianza actual. El valor del umbral (`ASSESSMENTS_MIN_TRUST_LEVEL`) sigue siendo cosa de HU-08 y HU-10.
+5. **Abierto — Estados del reporte** que impidan valorar (HU-05). Para la credibilidad no hace falta nada más (D6).
+6. **Abierto — Invocación:** después de registrar una valoración, HU-08/T4 debe llamar a `recalculateReportCredibility(reportId, { cause: 'validation_added', triggerId: assessmentId })` dentro de un `try/catch` que no cambie la respuesta (véase «Cómo invocarlo tras guardar»).
+7. ~~**Lectura de la tabla cerrada.**~~ **Resuelto (D5):** `credibility_internal.report_inputs` lee `report_assessments` y devuelve solo agregados; las pruebas pgTAP comprueban que la tabla sigue cerrada y que no se exponen identidades.
 
 Fuera de HU-08 quedan la llamada con `evidence_added` (HU-06/T5), con `evidence_moderated` cuando exista la operación de moderación y la presentación en el listado (HU-01/T7).

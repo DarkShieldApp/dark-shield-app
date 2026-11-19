@@ -91,19 +91,20 @@ en la frontera de escritura frente a cambios concurrentes de cuenta, confianza o
 permisos. No debe reutilizar una decisión anterior o recibida del navegador.
 La tabla sigue cerrada; T2 por sí sola no habilita escrituras ni evita esas carreras.
 
-## Decisiones pendientes del PO
+## Decisiones del PO
 
-La propuesta de [HU-09/T1](domain-design.md#pendiente-de-hu-08-mario-polaino)
-describe opciones de integración, no aprueba las reglas de participación de HU-08:
+Aprobado por el PO, 19/11/2026, con la implementación de HU-09/T2
+([detalle](domain-design.md#implementación-hu-09t2)). No cambian el código de T2:
+son reglas para HU-08/T4 y para el cálculo de la credibilidad.
 
-| Decisión                       | Opciones o propuesta de HU-09/T1                                                                                                                           |
-| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Repetición y cambio de opinión | Unicidad `(report_id, assessor_id)` o historial; credibilidad propone contar solo la última valoración por persona. No se añade unicidad ni edición en T2. |
-| Retirada                       | Acordar si se permite y si se representa por borrado o un campo como `withdrawn_at`; una retirada tendría que excluirse del cálculo.                       |
-| Reportes propios               | HU-09 propone rechazarlos al registrar e ignorarlos en el cálculo. HU-08 debe confirmar la regla y las excepciones. T2 no consulta el reporte.             |
-| Estado del reporte             | Acordar con HU-05 los estados que bloquean participación; no se inventa un estado ni una restricción.                                                      |
-| Confianza y revocación         | Aprobar el mínimo y confirmar el efecto sobre valoraciones anteriores. T2 solo deniega nuevas comprobaciones sin permiso; no anula valoraciones previas.   |
-| Credibilidad                   | La propuesta contempla notificar tras persistir y una lectura interna agregada. No se implementan recálculos, hooks ni acceso adicional en T2.             |
+| Decisión                       | Estado                                                                                                                                                                                                                                |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Repetición y cambio de opinión | **Aprobada (D1).** Cuenta solo la última valoración de cada valorador (`created_at` desc, `id` como desempate). Sin `UNIQUE` por ahora; T4 decide si guarda historial o impone unicidad.                                              |
+| Retirada                       | **Aprobada (D2).** No hay retirada de valoraciones en el Sprint 1.                                                                                                                                                                    |
+| Reportes propios               | **Aprobada (D3).** El cálculo ignora la valoración del autor; T4 deberá rechazarla al registrar.                                                                                                                                      |
+| Estado del reporte             | **Abierta.** Acordar con HU-05 los estados que bloquean participación. La credibilidad no filtra por estado: respeta la RLS de `reports` (D6).                                                                                        |
+| Confianza y revocación         | **Aprobada (D4).** Revocar el permiso o bajar la confianza no anula valoraciones emitidas; el cálculo excluye perfiles inactivos y usa la confianza actual. El valor del mínimo sigue pendiente con HU-10.                            |
+| Credibilidad                   | **Aprobada (D5).** `credibility_internal.report_inputs` lee `report_assessments` y devuelve solo agregados; la tabla sigue cerrada. Falta que T4 invoque `recalculateReportCredibility` tras persistir (`cause: 'validation_added'`). |
 
 ## HU-11 y pruebas
 

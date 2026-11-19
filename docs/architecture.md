@@ -34,7 +34,7 @@ flowchart LR
 ### Responsabilidades
 
 - **`web/src/app/`**: páginas, layouts y _Route Handlers_ en `web/src/app/api/`. Las operaciones compartidas por web y extensión deberán tener un contrato HTTP claro.
-- **`web/src/server/`**: contiene la factoría Supabase marcada con `server-only` y los tipos persistidos `Profile`, `Role` y `RoleCode`; implementa autorización y operaciones de reportes. El cliente no debe ser la autoridad sobre roles, permisos, credibilidad o confianza.
+- **`web/src/server/`**: contiene la factoría Supabase marcada con `server-only` y los tipos persistidos `Profile`, `Role` y `RoleCode`; implementa autorización, operaciones de reportes y el cálculo de credibilidad (HU-09/T2). El cliente no debe ser la autoridad sobre roles, permisos, credibilidad o confianza.
 - **`web/src/lib/supabase/`**: validación compartida y factoría de navegador marcada con `client-only`. Se valida al crear cada cliente, sin instancias globales ni acceso a red en la importación. Ambas factorías usan únicamente la clave publicable y desactivan persistencia, renovación y detección de sesiones en URL.
 - **`extension/src/entrypoints/`**: hoy contiene el popup. Un _background/service worker_ y los permisos necesarios se estudiarán cuando se implementen HU-17 o HU-03. No existen actualmente consultas ni alertas reales.
 - **`supabase/migrations/`**: versiona perfiles, roles, reportes, evidencias, valoraciones y permisos con sus controles de acceso. `supabase/tests/` verifica integridad y RLS con PostgreSQL real.
