@@ -31,7 +31,7 @@ const UNAUTHENTICATED = {
   error: { code: 'UNAUTHENTICATED', message: 'Sesión no válida o caducada.' },
 };
 
-let pngWithGps: Uint8Array;
+let pngWithGps: Uint8Array<ArrayBuffer>;
 
 beforeAll(async () => {
   // Captura real con datos personales en EXIF y GPS.
@@ -383,6 +383,8 @@ describe('paso 3: confirmar la evidencia', () => {
     value: unknown = { uploadId: UPLOAD, originalName: 'captura.png' },
   ) => {
     const context = setup(config);
+    // En la confirmación, el primer UUID nuevo es el de la evidencia.
+    context.options.newId = () => EVIDENCE;
     return {
       context,
       run: () =>

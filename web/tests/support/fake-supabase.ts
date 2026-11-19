@@ -209,7 +209,10 @@ export function createFakeSupabase(config: FakeSupabaseConfig = {}) {
       });
       if (config.uploadError)
         return { data: null, error: { message: 'fallo' } };
-      objects.set(path, new Blob([body], { type: options?.contentType }));
+      objects.set(
+        path,
+        new Blob([new Uint8Array(body)], { type: options?.contentType }),
+      );
       return { data: { path }, error: null };
     },
     async remove(paths: string[]) {
