@@ -424,6 +424,93 @@ Los códigos son estables: T3 y T4 deben reutilizarlos en la interfaz y en la AP
 
 Comprobar la firma no garantiza que el archivo sea inocuo. Quedan pendientes, para las tareas correspondientes de HU-06: análisis antivirus o de contenido activo en PDF, recodificación o eliminación de metadatos de imágenes, nombre de almacenamiento generado por el servidor (no usar el nombre del cliente como ruta), servicio y _bucket_ de almacenamiento (Supabase Storage sigue siendo la opción del [ADR-004](adr/0004-supabase-persistence.md)), control de acceso y relación de cada evidencia con su reporte y su autor.
 
+### Contrato de persistencia y API (HU-06/T4)
+
+**Estado:** acordado en la revisión de la PR #13 (19 de noviembre de 2026): preguntas 1–4 con Gregorio (HU-05/T4), 5–7 con Ildefonso (HU-06/T1 y HU-11) y 8–11 con Iván (HU-09/T2 y PO). Solo queda pendiente cómo eliminar los metadatos con la subida directa (ver más abajo). Se implementa en tres piezas: el modelo y su RLS (HU-06/T4a), la lectura pública de reportes (respuesta 2, en una PR aparte porque toca HU-05/T4) y el endpoint con el _bucket_ y sus políticas (HU-06/T4).
+
+#### Decisiones
+
+| Tema                    | Decisión                                                                                                                                                                                                                                      | Origen                          |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| Almacenamiento          | Supabase Storage, _bucket_ **privado** `report-evidences`. Objetos en `{user_id}/{report_id}/{uuid}.{ext}`. En la base de datos se guarda solo la ruta, nunca una URL.                                                                        | 5                               |
+| Lectura de archivos     | El servidor genera una URL firmada bajo demanda (`createSignedUrl`) que caduca a los **120 s** (rango acordado: de 60 s a 5 min).                                                                                                             | 5                               |
+| Subida                  | Directa desde el cliente con `createSignedUploadUrl`, en dos pasos, para no pasar los archivos por el límite de cuerpo de Vercel (~4,5 MB).                                                                                                   | 5                               |
+| Tipos y tamaño          | Solo `image/png`, `image/jpeg` e `image/webp`; **sin PDF**. Máximo 10 MiB (`EVIDENCE_MAX_FILE_BYTES`). Se aplican en `rules.ts`, en el _bucket_ (`file_size_limit` y `allowed_mime_types`) y en el handler, que no se fía del `Content-Type`. | 5 y 11 (el PO fija los valores) |
+| Sesión                  | Token Bearer + `supabase.auth.getUser(token)` con un cliente sin privilegios: las consultas se ejecutan como `authenticated` bajo RLS. Ni `service_role` en los handlers ni `@supabase/ssr` por ahora.                                        | 6, con el patrón de `main`      |
+| Errores de acceso       | `401 UNAUTHENTICATED` con el mismo cuerpo para token ausente, caducado o inválido; `403` si está autenticado sin permiso; `404` cuando la RLS oculta el recurso.                                                                              | 7                               |
+| Borrado de reportes     | `ON DELETE RESTRICT`: el borrado en cascada dejaría objetos huérfanos en Storage.                                                                                                                                                             | 1                               |
+| Visibilidad de reportes | Lectura pública (`anon` y `authenticated`), sin estados por ahora; `anon` no lee `author_id`. La escritura sigue siendo cosa de HU-05.                                                                                                        | 2                               |
+| Quién aporta            | Cualquier perfil activo, en cualquier reporte legible, también de otros autores.                                                                                                                                                              | 3                               |
+| Límite                  | Como mucho `EVIDENCE_MAX_FILES` (5) evidencias por colaborador y reporte, ocultas incluidas; también limita cada envío. Handler y _trigger_ en la base de datos.                                                                              | 4                               |
+| Moderación              | `visible` por defecto (moderación reactiva). Solo un administrador activo (`profiles.role_code = 'admin'`) cambia `moderation_status`. Una evidencia oculta deja de contar para la credibilidad, sin restar.                                  | 9 y 10                          |
+| Credibilidad (T5)       | `recalculateReportCredibility(reportId, context)` en `web/src/server/credibility.ts`, asíncrona e idempotente, invocada tras guardar la evidencia dentro de un `try/catch`: si falla, se registra y la respuesta sigue siendo `201`.          | 8                               |
+
+La sesión se aparta de la propuesta de usar `@supabase/ssr` (respuesta 6) para seguir el patrón que ya usa `POST /api/reports` en `main`: la plataforma y la extensión envían `Authorization: Bearer <access_token>` y el handler valida el token contra Auth con `getUser(token)`, nunca con `getSession()`. Cuando HU-11 introduzca cookies SSR, el cambio queda en la obtención del token; la autorización sigue siendo la RLS.
+
+#### Modelo y RLS de la tabla
+
+`public.report_evidences` se describe en "Modelo persistente de evidencias (HU-06/T4a)". En resumen: el servidor genera `id`; `storage_path` debe coincidir con `{uploaded_by}/{report_id}/{id}.{png|jpg|webp}`; `UNIQUE (report_id, sha256)`; las dos claves ajenas son `RESTRICT`; un _trigger_ limita a 5 por colaborador y reporte. `authenticated` lee las evidencias visibles de reportes legibles (el autor, todas las suyas; un admin activo, todas), inserta en su nombre con el perfil activo y solo un admin activo actualiza `moderation_status`. Nadie borra filas directamente.
+
+#### _Bucket_ y políticas de `storage.objects`
+
+Migración del endpoint: `insert into storage.buckets` de `report-evidences` con `public = false`, `file_size_limit = 10485760` y `allowed_mime_types = {image/png, image/jpeg, image/webp}`. Políticas para `authenticated` (ninguna para `anon`; ninguna de actualización, así que no se sobrescriben objetos):
+
+| Operación | Condición, además de `bucket_id = 'report-evidences'`                                                                                                                                                                             |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `insert`  | La primera carpeta es `auth.uid()`, el perfil está activo, la segunda carpeta es un reporte legible y el nombre del archivo tiene la forma `{uuid}.{png\|jpg\|webp}`. `createSignedUploadUrl` exige este permiso.                 |
+| `select`  | La primera carpeta es `auth.uid()` (sus subidas, confirmadas o no), **o** existe una fila de `report_evidences` con ese `storage_path` legible para quien consulta (se delega en la RLS de la tabla). `createSignedUrl` lo exige. |
+| `delete`  | La primera carpeta es `auth.uid()` y el objeto **no** está registrado en `report_evidences`. Sirve para la compensación y para limpiar subidas sin confirmar; una evidencia confirmada no se puede borrar así.                    |
+
+#### Flujo de subida en dos pasos
+
+1. **Pedir las URL de subida.** `POST /api/reports/{reportId}/evidences/uploads` con `{ "files": [{ "name": "captura.png", "type": "image/png", "size": 48211 }] }` (de 1 a 5 archivos).
+   - El servidor comprueba la sesión (401), el perfil activo (403) y que el reporte sea legible (404).
+   - Valida con `rules.ts` lo declarado: nombre, extensión, MIME y tamaño. La firma se comprueba en el paso 2, con los bytes reales.
+   - Comprueba que el colaborador no supere 5 evidencias en el reporte contando las ya guardadas; el _trigger_ es la garantía final.
+   - Por cada archivo genera un `uploadId` (UUID) y la ruta `{user_id}/{reportId}/{uploadId}.{ext}`, y llama a `createSignedUploadUrl(ruta)` sin `upsert`.
+   - Responde `201` con `{ "uploads": [{ "uploadId", "path", "token", "signedUrl" }] }`, en el mismo orden que `files`.
+2. **Subir.** El cliente sube cada archivo con `uploadToSignedUrl(path, token, file, { contentType })`. Storage aplica los límites del _bucket_.
+3. **Confirmar.** `POST /api/reports/{reportId}/evidences` con `{ "uploadId": "…", "originalName": "captura.png" }`, una evidencia por petición.
+   - Sesión (401), perfil (403) y reporte legible (404).
+   - Reconstruye la ruta a partir del usuario, del reporte, del `uploadId` y de la extensión de `originalName`; nunca acepta una ruta del cliente.
+   - Si el objeto no existe: `400 EVIDENCE_UPLOAD_MISSING`.
+   - Descarga el objeto y valida con `validateEvidenceFile` usando su tamaño real y sus primeros bytes. Si no es válido, borra el objeto y responde `400 EVIDENCE_REJECTED`.
+   - Calcula `sha256` e inserta la fila con `id = uploadId`. Si la inserción falla, borra el objeto: el _trigger_ del límite da `400 EVIDENCE_REJECTED` (`EVIDENCE_TOO_MANY`), el contenido repetido da `409 EVIDENCE_DUPLICATE` y cualquier otro fallo, `500 EVIDENCE_PERSISTENCE_FAILED`.
+   - Responde `201` con `{ "evidence": { "id", "reportId", "originalName", "mimeType", "sizeBytes", "moderationStatus", "createdAt" } }`.
+   - **Punto de enganche de la T5:** después de la inserción y antes de responder, en un `try/catch` que registre el error sin cambiar el `201`. La T5 no se implementa hasta que HU-09/T2 esté en `main`.
+
+#### `GET /api/reports/{reportId}/evidences`
+
+Sesión obligatoria (401) y reporte legible (404). Devuelve `200` con `{ "items": [...], "nextCursor": null }`, ordenado por `created_at` descendente con `id` como desempate y con `limit` (1–50, por defecto 20) y `cursor` opaco, como `GET /api/reports`. Cada elemento lleva los campos de la confirmación, una `url` firmada que caduca a los 120 s y `urlExpiresAt`. Solo incluye lo que la RLS deja leer. Una lista vacía es `200` con `items: []`.
+
+#### Errores
+
+Mismo formato que el resto de la API: `{ "error": { "code", "message", "details"? } }`.
+
+| Estado | `error.code`                                             | Cuándo                                                                                                                                            |
+| ------ | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `400`  | `INVALID_REQUEST`                                        | JSON mal formado, campos ausentes o de otro tipo, `uploadId` que no es un UUID, `limit` o `cursor` no válidos.                                    |
+| `400`  | `EVIDENCE_REJECTED`                                      | Algún archivo no supera `rules.ts`. `details` es la lista `{ index, code }` de `validateEvidenceBatch`; `EVIDENCE_TOO_MANY` va con `index: null`. |
+| `400`  | `EVIDENCE_UPLOAD_MISSING`                                | Se confirma una subida que no existe.                                                                                                             |
+| `401`  | `UNAUTHENTICATED`                                        | Token ausente, caducado o inválido; siempre con el mensaje «Sesión no válida o caducada.».                                                        |
+| `403`  | `FORBIDDEN_INACTIVE_PROFILE`                             | Perfil inexistente o inactivo (mismo código que `POST /api/reports`).                                                                             |
+| `404`  | `REPORT_NOT_FOUND`                                       | `reportId` mal formado, inexistente o no legible: no se distingue «no existe» de «no es visible».                                                 |
+| `409`  | `EVIDENCE_DUPLICATE`                                     | El mismo contenido ya está asociado al reporte.                                                                                                   |
+| `500`  | `EVIDENCE_STORAGE_FAILED`, `EVIDENCE_PERSISTENCE_FAILED` | Fallo de Storage o de la base de datos, tras la compensación.                                                                                     |
+| `503`  | `SERVICE_UNAVAILABLE`                                    | Supabase no está configurado en el servidor (como en `/api/reports`).                                                                             |
+
+Los códigos de archivo son los de `EVIDENCE_ERROR_CODES`; la interfaz los traduce con `EVIDENCE_ERROR_MESSAGES`. `POST /api/reports` usa todavía `INVALID_SESSION` para el token inválido: conviene alinearlo con este `401` único.
+
+#### Fallos parciales y subidas sin confirmar
+
+- Si el paso 3 falla después de descargar, se borra el objeto (permiso de borrado del propietario sobre objetos no registrados).
+- Si también falla el borrado, se registra la ruta (sin datos personales) para limpiarla después.
+- Las subidas que nunca se confirman quedan en la carpeta del usuario sin fila asociada. El cliente las borra si el usuario cancela; una limpieza periódica de objetos sin fila con más de 24 h requiere un proceso con privilegios fuera de los handlers y queda pendiente.
+
+#### Metadatos EXIF/GPS (DoD, punto 4): pendiente de confirmar
+
+Con la subida directa, el archivo original llega a Storage **antes** de que el servidor pueda tocarlo: no se pueden eliminar los metadatos antes de guardarlo, como suponía la propuesta inicial. La validación del paso 3 tampoco los elimina. Propuesta, sin cambiar el flujo en dos pasos: en la confirmación, el servidor recodifica la imagen con `sharp` (descarta EXIF, GPS, XMP e IPTC y aplica la orientación), sube el resultado como un objeto nuevo `{user_id}/{reportId}/{evidenceId}.{ext}`, registra esa ruta y borra el original. Los bytes viajan entre Storage y el servidor, no en el cuerpo de la petición, así que el límite de Vercel no afecta. Hasta decidirlo, la documentación no da por cumplido el punto 4 de la DoD.
+
 ### Modelo persistente de evidencias (HU-06/T4a)
 
 **Estado:** migración `supabase/migrations/20261118170000_create_report_evidences.sql` con pruebas pgTAP (`report_evidences_model.test.sql` y `report_evidences_rls.test.sql`). Aplica las decisiones cerradas en la revisión del contrato de HU-06/T4 (PR #13). El _bucket_ de Storage, sus políticas y los endpoints corresponden al endpoint de HU-06/T4.
