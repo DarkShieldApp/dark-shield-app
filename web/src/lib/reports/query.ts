@@ -41,6 +41,10 @@ export interface ReportSummaryItem {
   title: string;
   description: string;
   pattern_type: string | null;
+  /**
+   * URL de la página reportada sin query ni fragmento. Es igual a `page_key`
+   * (HU-01/T3): la URL completa guardada no se expone en la consulta pública.
+   */
   target_url: string;
   page_key: string;
   created_at: string;

@@ -1,5 +1,6 @@
 -- HU-05/T4 + HU-06 (answer 2 in PR #13): reports are publicly readable.
--- anon reads the public projection (no author_id); authenticated reads every
+-- anon reads the public projection (no author_id, no target_url: HU-01/T3
+-- keeps the reported URL's query string private); authenticated reads every
 -- column. Writes stay revoked until HU-05 defines them.
 begin;
 create extension if not exists pgtap with schema extensions;
@@ -20,11 +21,15 @@ select ok(not has_table_privilege('anon', 'public.reports', 'SELECT'),
 select ok(has_column_privilege('anon', 'public.reports', c, 'SELECT'),
   'anon can read ' || c)
 from unnest(array[
-  'id', 'title', 'description', 'pattern_type', 'target_url',
+  'id', 'title', 'description', 'pattern_type',
   'page_key', 'target_host', 'registrable_domain', 'created_at'
 ]) c;
 select ok(not has_column_privilege('anon', 'public.reports', 'author_id', 'SELECT'),
   'anon cannot read author_id');
+select ok(not has_column_privilege('anon', 'public.reports', 'target_url', 'SELECT'),
+  'anon cannot read target_url, which may keep the query string (HU-01/T3)');
+select ok(has_column_privilege('authenticated', 'public.reports', 'target_url', 'SELECT'),
+  'authenticated still reads target_url');
 select ok(not has_any_column_privilege('service_role', 'public.reports', 'SELECT'),
   'service_role keeps no access');
 
@@ -49,6 +54,8 @@ select results_eq(
 );
 select throws_ok($$select author_id from public.reports$$,
   '42501', null, 'anon cannot read the author');
+select throws_ok($$select target_url from public.reports$$,
+  '42501', null, 'anon cannot read the stored URL with its query string');
 select throws_ok($$insert into public.reports default values$$,
   '42501', null, 'anon cannot create reports');
 select throws_ok($$update public.reports set title = 'x'$$,

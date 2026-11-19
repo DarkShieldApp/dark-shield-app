@@ -99,6 +99,49 @@ describe('normalización y validación de payload en servidor', () => {
     );
   });
 
+  it('obtiene el dominio registrable con la Public Suffix List, incluida la sección privada', () => {
+    expect(extractRegistrableDomain('example.co.uk')).toBe('example.co.uk');
+    expect(extractRegistrableDomain('shop.example.com.co')).toBe(
+      'example.com.co',
+    );
+    // Sección privada: cada sitio de GitHub Pages o Blogspot es un dominio propio.
+    expect(extractRegistrableDomain('ana.github.io')).toBe('ana.github.io');
+    expect(extractRegistrableDomain('docs.ana.github.io')).toBe(
+      'ana.github.io',
+    );
+    expect(extractRegistrableDomain('bar.blogspot.com')).toBe(
+      'bar.blogspot.com',
+    );
+    // Límite de etiqueta: no se confunden dominios parecidos.
+    expect(extractRegistrableDomain('notexample.com')).toBe('notexample.com');
+    expect(extractRegistrableDomain('example.com.attacker.test')).toBe(
+      'attacker.test',
+    );
+    expect(extractRegistrableDomain('Example.COM.')).toBe('example.com');
+  });
+
+  it('usa el host como clave cuando la PSL no da dominio registrable (IP o sufijo)', () => {
+    expect(extractRegistrableDomain('192.168.1.1')).toBe('192.168.1.1');
+    expect(extractRegistrableDomain('[::1]')).toBe('[::1]');
+    expect(extractRegistrableDomain('github.io')).toBe('github.io');
+  });
+
+  it('normaliza destinos con IDN, sufijos privados e IP', () => {
+    expect(normalizeReportTarget('https://Bücher.example/Ruta/')).toEqual({
+      targetUrl: 'https://xn--bcher-kva.example/Ruta/',
+      pageKey: 'https://xn--bcher-kva.example/Ruta/',
+      targetHost: 'xn--bcher-kva.example',
+      registrableDomain: 'xn--bcher-kva.example',
+    });
+    expect(
+      normalizeReportTarget('https://docs.ana.github.io/guia')
+        .registrableDomain,
+    ).toBe('ana.github.io');
+    expect(
+      normalizeReportTarget('http://192.168.1.1:8080/admin').registrableDomain,
+    ).toBe('192.168.1.1');
+  });
+
   it('normaliza page_key sin query ni fragmento', () => {
     const normalized = normalizeReportTarget(VALID_BODY.targetUrl);
     expect(normalized.targetHost).toBe('shop.example.co.uk');

@@ -1,6 +1,7 @@
 ﻿import 'server-only';
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { parse as parsePublicSuffix } from 'tldts';
 import {
   validateReportForm,
   type ReportCategory,
@@ -57,39 +58,34 @@ export class ReportApiError extends Error {
   }
 }
 
-const MULTI_PART_PUBLIC_SUFFIXES = new Set([
-  'co.uk',
-  'org.uk',
-  'ac.uk',
-  'gov.uk',
-  'com.au',
-  'net.au',
-  'org.au',
-  'com.br',
-  'com.mx',
-  'com.ar',
-  'gob.es',
-  'org.es',
-  'edu.es',
-  'nom.es',
-]);
-
 const CONTROL_CHARS_REGEX = /[\u0000-\u001F\u007F]/;
 const MAX_TARGET_URL_LENGTH = 2048;
 
+// HU-01/T2: Public Suffix List mantenida (tldts), incluida la sección privada,
+// para que *.github.io o *.blogspot.com sean dominios registrables propios.
+// Recibe hosts ya normalizados por WHATWG URL, no URLs completas.
+const PUBLIC_SUFFIX_OPTIONS = {
+  allowPrivateDomains: true,
+  extractHostname: false,
+  mixedInputs: false,
+} as const;
+
+function normalizeHost(hostname: string): string {
+  // tldts no ignora el punto final del FQDN ("example.com." → "com.").
+  return hostname.toLowerCase().replace(/\.+$/, '');
+}
+
+function lookupPublicSuffix(hostname: string) {
+  return parsePublicSuffix(normalizeHost(hostname), PUBLIC_SUFFIX_OPTIONS);
+}
+
+/**
+ * Dominio registrable según la PSL. Cuando no existe (IP, `localhost` o un
+ * sufijo público), devuelve el host: la columna no admite nulos y esos hosts
+ * solo se consultan por página, porque el modo dominio los rechaza.
+ */
 export function extractRegistrableDomain(hostname: string): string {
-  const normalized = hostname.toLowerCase().replace(/\.+$/, '');
-  const labels = normalized.split('.').filter(Boolean);
-  if (labels.length <= 2) {
-    return normalized;
-  }
-
-  const lastTwo = labels.slice(-2).join('.');
-  if (MULTI_PART_PUBLIC_SUFFIXES.has(lastTwo) && labels.length >= 3) {
-    return labels.slice(-3).join('.');
-  }
-
-  return lastTwo;
+  return lookupPublicSuffix(hostname).domain ?? normalizeHost(hostname);
 }
 
 export function normalizeReportTarget(rawUrl: string): NormalizedReportTarget {
@@ -287,6 +283,13 @@ export function encodeCursor(createdAt: string, id: string): string {
   return Buffer.from(JSON.stringify({ createdAt, id })).toString('base64url');
 }
 
+// El cursor llega del cliente y sus valores se interpolan en el filtro `or`
+// de PostgREST: solo se aceptan un timestamptz ISO 8601 y un UUID.
+const CURSOR_TIMESTAMP_REGEX =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?(Z|[+-]\d{2}:\d{2})$/;
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export function decodeCursor(cursor: string): {
   createdAt: string;
   id: string;
@@ -299,8 +302,9 @@ export function decodeCursor(cursor: string): {
       parsed !== null &&
       typeof parsed.createdAt === 'string' &&
       typeof parsed.id === 'string' &&
-      parsed.createdAt.trim() !== '' &&
-      parsed.id.trim() !== ''
+      CURSOR_TIMESTAMP_REGEX.test(parsed.createdAt) &&
+      !Number.isNaN(Date.parse(parsed.createdAt)) &&
+      UUID_REGEX.test(parsed.id)
     ) {
       return { createdAt: parsed.createdAt, id: parsed.id };
     }
@@ -310,6 +314,57 @@ export function decodeCursor(cursor: string): {
     QUERY_ERROR_CODES.INVALID_CURSOR,
     'El cursor de paginación no es válido.',
   );
+}
+
+const URL_WITH_SCHEME_REGEX = /^[a-z][a-z0-9+.-]*:\/\//i;
+
+function invalidDomain(message: string): ReportApiError {
+  return new ReportApiError(
+    400,
+    QUERY_ERROR_CODES.INVALID_TARGET_DOMAIN,
+    message,
+  );
+}
+
+/**
+ * scope=domain: el host se obtiene con el parser WHATWG (minúsculas, IDN a
+ * punycode, sin puerto ni ruta), también cuando se envía un dominio sin
+ * esquema, y la clave es su dominio registrable según la PSL. Así coincide
+ * con `registrable_domain`, que `normalizeReportTarget` calcula al crear.
+ */
+function resolveDomainLookupKey(rawTarget: string): string {
+  const hasScheme = URL_WITH_SCHEME_REGEX.test(rawTarget);
+  let parsed: URL;
+  try {
+    parsed = new URL(hasScheme ? rawTarget : `http://${rawTarget}`);
+  } catch {
+    throw invalidDomain('El formato del dominio no es válido.');
+  }
+
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw invalidDomain(
+      'La URL para búsqueda por dominio debe usar http o https.',
+    );
+  }
+
+  if (parsed.username !== '' || parsed.password !== '') {
+    throw invalidDomain('El dominio no puede contener credenciales.');
+  }
+
+  const suffixInfo = lookupPublicSuffix(parsed.hostname);
+  if (suffixInfo.isIp) {
+    throw invalidDomain(
+      'Las direcciones IP solo se admiten en consultas con scope=page.',
+    );
+  }
+
+  if (!suffixInfo.domain) {
+    throw invalidDomain(
+      'El objetivo de búsqueda no puede ser únicamente un sufijo público.',
+    );
+  }
+
+  return suffixInfo.domain;
 }
 
 export function parseAndValidateQueryParams(
@@ -396,92 +451,7 @@ export function parseAndValidateQueryParams(
 
     lookupKey = `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
   } else {
-    let rawHost = rawTarget;
-    if (/^https?:\/\//i.test(rawTarget)) {
-      let parsedUrl: URL;
-      try {
-        parsedUrl = new URL(rawTarget);
-      } catch {
-        throw new ReportApiError(
-          400,
-          QUERY_ERROR_CODES.INVALID_TARGET_DOMAIN,
-          'La URL proporcionada para búsqueda por dominio no es válida.',
-        );
-      }
-      if (parsedUrl.username !== '' || parsedUrl.password !== '') {
-        throw new ReportApiError(
-          400,
-          QUERY_ERROR_CODES.INVALID_TARGET_DOMAIN,
-          'El dominio no puede contener credenciales.',
-        );
-      }
-      rawHost = parsedUrl.hostname;
-    } else {
-      if (rawTarget.includes('@')) {
-        throw new ReportApiError(
-          400,
-          QUERY_ERROR_CODES.INVALID_TARGET_DOMAIN,
-          'El dominio no puede contener credenciales.',
-        );
-      }
-      const firstPart = rawTarget.split('/')[0] ?? '';
-      const hostPart = firstPart.split(':')[0] ?? '';
-      rawHost = hostPart.trim();
-    }
-
-    const normalizedHost = rawHost.toLowerCase().replace(/\.+$/, '');
-
-    const isIpv4 = /^(\d{1,3}\.){3}\d{1,3}$/.test(normalizedHost);
-    const isIpv6 =
-      normalizedHost.includes(':') || /^[0-9a-f:]+$/i.test(normalizedHost);
-    if (isIpv4 || isIpv6) {
-      throw new ReportApiError(
-        400,
-        QUERY_ERROR_CODES.INVALID_TARGET_DOMAIN,
-        'Las direcciones IP solo se admiten en consultas con scope=page.',
-      );
-    }
-
-    const isSingleLabel = !normalizedHost.includes('.');
-    const isKnownMultiPartSuffix =
-      MULTI_PART_PUBLIC_SUFFIXES.has(normalizedHost);
-    const isCommonSingleTld = [
-      'com',
-      'org',
-      'net',
-      'edu',
-      'gov',
-      'es',
-      'uk',
-      'io',
-      'de',
-      'fr',
-      'it',
-      'app',
-      'dev',
-    ].includes(normalizedHost);
-
-    if (isSingleLabel || isKnownMultiPartSuffix || isCommonSingleTld) {
-      throw new ReportApiError(
-        400,
-        QUERY_ERROR_CODES.INVALID_TARGET_DOMAIN,
-        'El objetivo de búsqueda no puede ser únicamente un sufijo público.',
-      );
-    }
-
-    if (
-      !/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i.test(
-        normalizedHost,
-      )
-    ) {
-      throw new ReportApiError(
-        400,
-        QUERY_ERROR_CODES.INVALID_TARGET_DOMAIN,
-        'El formato del dominio no es válido.',
-      );
-    }
-
-    lookupKey = extractRegistrableDomain(normalizedHost);
+    lookupKey = resolveDomainLookupKey(rawTarget);
   }
 
   let limit = 20;
@@ -524,11 +494,12 @@ export async function queryReports(
   const query = parseAndValidateQueryParams(rawParams);
   const client = injectedClient ?? createServerSupabaseClient();
 
+  // `target_url` puede conservar la query de la URL reportada (tokens, IDs de
+  // sesión): no se lee y `anon` no tiene permiso sobre la columna. La URL
+  // pública es `page_key`, que ya excluye query y fragmento.
   let dbQuery = client
     .from('reports')
-    .select(
-      'id, title, description, pattern_type, target_url, page_key, created_at',
-    )
+    .select('id, title, description, pattern_type, page_key, created_at')
     .order('created_at', { ascending: false })
     .order('id', { ascending: false })
     .limit(query.limit + 1);
@@ -574,7 +545,7 @@ export async function queryReports(
     title: row.title,
     description: row.description,
     pattern_type: row.pattern_type as string | null,
-    target_url: row.target_url,
+    target_url: row.page_key,
     page_key: row.page_key,
     created_at: row.created_at,
   }));
