@@ -15,9 +15,10 @@ select is(
   (select count(*)
    from pg_policies
    where schemaname = 'public'
-     and tablename = 'reports'),
+     and tablename = 'reports'
+     and cmd <> 'SELECT'),
   0::bigint,
-  'No report access policies defined'
+  'No report write policies defined (public read: reports_public_read.test.sql)'
 );
 
 
@@ -29,9 +30,14 @@ from unnest(array[
   'anon', 'authenticated', 'service_role'
 ]) r
 cross join unnest(array[
-  'SELECT', 'INSERT', 'UPDATE', 'DELETE',
+  'INSERT', 'UPDATE', 'DELETE',
   'TRUNCATE', 'REFERENCES', 'TRIGGER'
 ]) p;
+
+select ok(
+  not has_table_privilege('service_role', 'public.reports', 'SELECT'),
+  'service_role lacks SELECT'
+);
 
 
 select ok(
@@ -43,12 +49,6 @@ cross join unnest(array['INSERT', 'UPDATE']) p;
 
 
 set local role authenticated;
-
-select throws_ok(
-  $$select * from public.reports$$,
-  '42501', null,
-  'Authenticated report read denied'
-);
 
 select throws_ok(
   $$insert into public.reports default values$$,
@@ -75,7 +75,7 @@ set local role anon;
 select throws_ok(
   $$select * from public.reports$$,
   '42501', null,
-  'Anonymous report read denied'
+  'Anonymous full-row read denied (author_id is not public)'
 );
 
 select throws_ok(
