@@ -290,18 +290,19 @@ describe('propiedades', () => {
   });
 
   it('límites: la puntuación es siempre un entero entre 0 y 100', () => {
-    const extremes: Scenario[] = [
-      { invalidate: Array<number>(500).fill(100) },
-      { validate: Array<number>(500).fill(100), evidences: 1000 },
-    ];
-    for (const s of [...grid, ...extremes]) {
+    const allAgainst: Scenario = { invalidate: Array<number>(500).fill(100) };
+    const allFor: Scenario = {
+      validate: Array<number>(500).fill(100),
+      evidences: 1000,
+    };
+    for (const s of [...grid, allAgainst, allFor]) {
       const value = score(s);
       expect(Number.isInteger(value)).toBe(true);
       expect(value).toBeGreaterThanOrEqual(0);
       expect(value).toBeLessThanOrEqual(100);
     }
-    expect(score(extremes[0])).toBeLessThan(LOW_SCORE_THRESHOLD);
-    expect(score(extremes[1])).toBeGreaterThanOrEqual(HIGH_SCORE_THRESHOLD);
+    expect(score(allAgainst)).toBeLessThan(LOW_SCORE_THRESHOLD);
+    expect(score(allFor)).toBeGreaterThanOrEqual(HIGH_SCORE_THRESHOLD);
   });
 
   it('límites: solo evidencias nunca dan high ni datos suficientes', () => {
@@ -501,7 +502,7 @@ describe('recalculateReportCredibility', () => {
       { client },
     );
     expect(result.score).toBe(50);
-    expect(calls.rpc[0].args).toEqual({ report_ids: [REPORT] });
+    expect(calls.rpc[0]?.args).toEqual({ report_ids: [REPORT] });
   });
 
   it.each([['no-uuid'], [''], [42], [null]])(
@@ -547,7 +548,7 @@ describe('recalculateReportCredibility', () => {
     );
     expect(error.message).not.toContain('permission denied');
     expect(logError).toHaveBeenCalledOnce();
-    const [message, cause] = logError.mock.calls[0];
+    const [message, cause] = logError.mock.calls[0] ?? [];
     expect(message).toContain(REPORT);
     expect(message).toContain('evidence_added');
     expect(message).toContain('e-1');
@@ -574,7 +575,7 @@ describe('recalculateReportCredibility', () => {
       'UNAVAILABLE',
     );
     expect(error.cause).toBe(failure);
-    expect(logError.mock.calls[0][0]).toContain('manual_recalc');
+    expect(logError.mock.calls[0]?.[0]).toContain('manual_recalc');
   });
 
   it('sin context, el registro indica que no hay causa', async () => {
@@ -584,7 +585,7 @@ describe('recalculateReportCredibility', () => {
       recalculateReportCredibility(REPORT, undefined, { client, logError }),
       'UNAVAILABLE',
     );
-    expect(logError.mock.calls[0][0]).toContain('sin causa');
+    expect(logError.mock.calls[0]?.[0]).toContain('sin causa');
   });
 
   it('por defecto usa el cliente de servidor sin sesión', async () => {
@@ -678,7 +679,7 @@ describe('getReportsCredibility', () => {
       [REPORT, REPORT.toUpperCase(), REPORT],
       { client },
     );
-    expect(calls.rpc[0].args).toEqual({ report_ids: [REPORT] });
+    expect(calls.rpc[0]?.args).toEqual({ report_ids: [REPORT] });
     expect(result.size).toBe(1);
   });
 
