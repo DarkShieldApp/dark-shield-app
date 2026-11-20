@@ -2,27 +2,33 @@
 
 Supabase/PostgreSQL y Supabase Auth son las tecnologías adoptadas. HU-14/T1
 incorpora `public.profiles`, su primera migración, triggers, RLS y pruebas reales.
-T2 añade `public.roles` y un rol principal obligatorio por perfil. T3 añade permisos base y administración auditada. HU-11/T1–T2 añade el cliente
-web y acceso por enlace de correo con confirmación. La sesión persistente,
-renovación automática, escucha de cambios y cierre de sesión de HU-11/T3 están
-implementados en el cliente web. La protección de rutas por rol de colaborador
-corresponde a T4.
+T2 añade `public.roles` y un rol principal obligatorio por perfil. T3 añade permisos base y administración auditada. HU-11 añade registro con nombre
+de usuario, correo y contraseña; el correo debe confirmarse antes de iniciar
+sesión con usuario o correo y contraseña. La sesión persistente, renovación
+automática, escucha de cambios y cierre de sesión de HU-11/T3 están implementados
+en el cliente web. La protección de rutas por rol de colaborador corresponde a T4.
 
 ## Proyecto remoto y diagnóstico
 
 La URL y clave publicable del proyecto compartido se guardan en `web/.env`,
-partiendo de `web/.env.example` sin sobrescribir un archivo existente. No se usan
-claves administrativas ni contraseñas remotas en código o Git.
+partiendo de `web/.env.example` sin sobrescribir un archivo existente. El inicio
+de sesión por nombre de usuario también requiere `SUPABASE_SECRET_KEY` en el
+servidor para resolver internamente el correo asociado; nunca debe exponerse al
+navegador ni tener el prefijo `NEXT_PUBLIC_`. No se guardan claves ni contraseñas
+remotas en código o Git.
 
 `npm run supabase:check` carga explícitamente `web/.env` y consulta solo
 `/auth/v1/health`. Su resultado demuestra disponibilidad de Auth, no el modelo ni
 RLS. No crea usuarios ni sesiones y no se ejecuta en CI o build.
 
-Para el proyecto remoto, habilitar el registro por correo y la confirmación de
-correo en Authentication. Añadir la URL de la aplicación con la ruta
-`/login?emailConfirmed=1` a las URLs de redirección permitidas; la URL enviada
-en el enlace de acceso debe coincidir con una de ellas. No se necesitan credenciales
-de Google ni claves de servidor en el navegador.
+Para el proyecto remoto, habilitar el registro por correo, la confirmación de
+correo y el proveedor de contraseñas en Authentication. Añadir la URL de la
+aplicación con las rutas `/login?emailConfirmed=1` y
+`/login?resetPassword=1` a las URLs de redirección permitidas. El enlace recibido
+confirma el registro; después el acceso se realiza con usuario o correo y
+contraseña. La recuperación por correo permite establecer contraseña y usuario
+en cuentas confirmadas creadas con el acceso anterior por enlace. No se necesitan
+credenciales de Google ni claves secretas en el navegador.
 
 Las migraciones del dominio están versionadas para validación local. Esta tarea no
 las aplica al proyecto remoto compartido; su estado debe comprobarse antes del despliegue. El remoto utiliza PostgreSQL 17.
@@ -74,10 +80,13 @@ npm exec -- supabase stop
 `migrations/20261110154948_create_profiles.sql`, creada con `supabase migration
 new create_profiles`, define:
 
-- `public.profiles`, seis atributos originales (siete después de T2) y sus restricciones, con UUID compartido y FK
+- `public.profiles`, seis atributos originales (siete después de T2; el nombre de usuario se añadió en HU-11) y sus restricciones, con UUID compartido y FK
   `ON DELETE RESTRICT` a `auth.users`.
 - `private.create_profile_for_auth_user()`, invocada después de insertar en Auth,
   que crea un perfil con valores predeterminados sin copiar metadatos.
+- HU-11 amplía el trigger para guardar el nombre de usuario normalizado y añade
+  `private.sync_profile_username_from_auth()` para mantenerlo al cambiar metadatos
+  durante la recuperación de contraseña.
 - Backfill de las identidades existentes. El trigger se instala antes del backfill;
   la PK y `ON CONFLICT (id) DO NOTHING` impiden duplicar perfiles.
 - `private.set_profile_updated_at()`, que preserva `created_at` y actualiza
@@ -85,11 +94,12 @@ new create_profiles`, define:
 - RLS explícita y permiso `SELECT` a `authenticated` limitado al perfil propio
   activo. Sin escritura pública ni acceso anónimo o administrativo por API.
 
-La función de creación es `SECURITY DEFINER` para permitir que Auth cree el perfil
-sin concederle acceso general a la tabla. Ambas funciones tienen `search_path`
-vacío y ejecución pública revocada; `private` no figura en `api.schemas`. La
-función de fechas es `SECURITY INVOKER`. El trigger de Auth propaga errores y
-revierte la inserción de identidad si no puede crear su perfil.
+Las funciones de creación y sincronización son `SECURITY DEFINER` para permitir
+que Auth mantenga los perfiles sin concederle acceso general a la tabla. Las
+funciones tienen `search_path` vacío y ejecución pública revocada; `private` no
+figura en `api.schemas`. La función de fechas es `SECURITY INVOKER`. Los triggers
+de Auth propagan errores y revierten el cambio de identidad si no pueden guardar
+el perfil.
 
 La migración revoca explícitamente los posibles grants por defecto, incluidos
 los de `service_role`, y concede solo lo necesario. No depende de que la exposición
@@ -102,6 +112,13 @@ El [diseño de dominio](../docs/domain-design.md) describe atributos, límite de
 conversión de decimales a `SMALLINT`, desactivación, preservación de identidades y
 consecuencias de la FK ante necesidades excepcionales de eliminación. La política
 sobre perfiles no revoca sesiones ni protege futuras tablas y endpoints.
+
+La migración `20261120143700_add_profile_usernames.sql` añade el identificador
+único de usuario (3–30 letras ASCII, números o `_`, normalizado a minúsculas).
+Auth lo toma de los metadatos de registro y lo guarda en `profiles`; RLS mantiene
+la tabla privada. El acceso por nombre de usuario resuelve el correo en una ruta
+de servidor con `SUPABASE_SECRET_KEY` y solo devuelve los tokens de sesión si
+Auth acepta la contraseña y el correo está confirmado.
 
 ## Migración de roles
 

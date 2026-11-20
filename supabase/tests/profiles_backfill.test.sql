@@ -20,8 +20,10 @@ drop policy report_evidences_objects_delete_own_unregistered on storage.objects;
 drop table public.report_evidences;
 alter table public.reports
   drop constraint reports_author_fkey;
+drop trigger auth_users_sync_profile_username on auth.users;
 drop trigger auth_users_create_profile on auth.users;
 drop table public.profiles;
+drop function private.sync_profile_username_from_auth();
 drop function private.create_profile_for_auth_user();
 drop function private.set_profile_updated_at();
 

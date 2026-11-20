@@ -22,7 +22,11 @@ select ok(not has_schema_privilege(r, 'private', 'USAGE'), r || ' cannot use pri
 from unnest(array['anon', 'authenticated', 'service_role']) r;
 select ok(not has_function_privilege(r, f, 'EXECUTE'), r || ' cannot execute ' || f)
 from unnest(array['anon', 'authenticated', 'service_role']) r
-cross join unnest(array['private.create_profile_for_auth_user()', 'private.set_profile_updated_at()']) f;
+cross join unnest(array[
+  'private.create_profile_for_auth_user()',
+  'private.set_profile_updated_at()',
+  'private.sync_profile_username_from_auth()'
+]) f;
 select ok((select prosecdef and proconfig @> array['search_path=""']
   from pg_proc where oid = 'private.create_profile_for_auth_user()'::regprocedure),
   'Auth trigger is definer with an empty search_path');

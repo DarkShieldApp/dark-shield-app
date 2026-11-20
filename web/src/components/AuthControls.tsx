@@ -12,8 +12,15 @@ export default function AuthControls() {
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const email = session?.user.email;
-  const displayName = email ?? 'Mi cuenta';
-  const initials = displayName.slice(0, 1).toLocaleUpperCase();
+  const username = session?.user.user_metadata.username;
+  const displayName =
+    typeof username === 'string' && username
+      ? `@${username.replace(/^@/, '')}`
+      : (email ?? 'Mi cuenta');
+  const initials = displayName
+    .replace(/^@/, '')
+    .slice(0, 1)
+    .toLocaleUpperCase();
 
   async function handleSignOut() {
     setIsSigningOut(true);

@@ -28,7 +28,9 @@ insert into auth.users (id, raw_user_meta_data) values
   ('f1111111-1111-4111-8111-111111111111', '{"role_code":"admin"}');
 update public.profiles set display_name = 'Existing', trust_level = 42, is_active = false
   where id = 'f1111111-1111-4111-8111-111111111111';
-create temporary table before_t2 as select * from public.profiles;
+create temporary table before_t2 as
+  select id, display_name, trust_level, is_active, role_code, created_at, updated_at
+  from public.profiles;
 select unnest(statements) from supabase_migrations.schema_migrations
   where version = '20261111113011'
 \gexec
