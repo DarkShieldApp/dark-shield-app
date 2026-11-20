@@ -3,10 +3,15 @@
 import Link from 'next/link';
 import type { FormEvent } from 'react';
 import { useEffect, useState } from 'react';
-import { createBrowserSupabaseClient } from '../../lib/supabase/client';
+import { useAuth } from '../../components/AuthProvider';
 import { sendEmailSignInLink } from '../../lib/supabase/email-auth';
 
 export default function LoginPage() {
+  const {
+    session,
+    isLoading: isSessionLoading,
+    error: sessionError,
+  } = useAuth();
   const [email, setEmail] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -15,40 +20,37 @@ export default function LoginPage() {
   useEffect(() => {
     const emailConfirmed =
       new URLSearchParams(window.location.search).get('emailConfirmed') === '1';
-    const hasAuthCallback = window.location.hash.includes('access_token=');
+    const hasAuthCallback =
+      window.location.hash.includes('access_token=') ||
+      new URLSearchParams(window.location.search).has('code');
 
-    if (!emailConfirmed && !hasAuthCallback) {
+    if ((!emailConfirmed && !hasAuthCallback) || isSessionLoading) {
       return;
     }
 
-    async function readAuthCallback() {
-      try {
-        const { data, error } =
-          await createBrowserSupabaseClient().auth.getSession();
-        if (error) {
-          throw error;
-        }
-
-        if (emailConfirmed) {
-          setSuccessMessage(
-            data.session
-              ? 'Correo confirmado. Has iniciado sesión.'
-              : 'Correo confirmado. Ya puedes solicitar un enlace de acceso.',
-          );
-        } else if (data.session) {
-          setSuccessMessage('Has iniciado sesión correctamente.');
-        }
-      } catch (error) {
-        setErrorMessage(
-          error instanceof Error
-            ? error.message
-            : 'No se pudo completar la confirmación del correo.',
-        );
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) {
+        return;
       }
-    }
 
-    void readAuthCallback();
-  }, []);
+      if (sessionError) {
+        setErrorMessage(sessionError.message);
+      } else if (emailConfirmed) {
+        setSuccessMessage(
+          session
+            ? 'Correo confirmado. Has iniciado sesión.'
+            : 'Correo confirmado. Ya puedes solicitar un enlace de acceso.',
+        );
+      } else if (session) {
+        setSuccessMessage('Has iniciado sesión correctamente.');
+      }
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [isSessionLoading, session, sessionError]);
 
   async function handleEmailSignIn(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

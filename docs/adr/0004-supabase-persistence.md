@@ -1,7 +1,7 @@
 # ADR-004 — Persistencia con Supabase
 
 - **Fecha:** 9 de noviembre de 2026.
-- **Estado:** Supabase y Supabase Auth adoptados; SDK, CLI y perfil de usuario HU-14/T1 implementados el 10 de noviembre de 2026. T2 añade catálogo y rol principal el 11 de noviembre de 2026. T3 añade permisos efectivos y administración auditada. El repositorio también contiene reportes, valoraciones y evidencias. HU-11/T1–T2 incorpora cliente y acceso por enlace de correo; persistencia, renovación y autorización de rutas siguen pendientes.
+- **Estado:** Supabase y Supabase Auth adoptados; SDK, CLI y perfil de usuario HU-14/T1 implementados el 10 de noviembre de 2026. T2 añade catálogo y rol principal el 11 de noviembre de 2026. T3 añade permisos efectivos y administración auditada. El repositorio también contiene reportes, valoraciones y evidencias. HU-11/T1–T3 incorpora acceso por correo, sesión persistente y cierre de sesión; la protección de rutas por rol sigue pendiente de T4.
 
 ## Contexto
 
@@ -9,7 +9,7 @@ El ConOps requiere conservar usuarios, reportes, evidencias, validaciones y otro
 
 ## Decisión
 
-Usar **Supabase / PostgreSQL** para la persistencia y reservar `supabase/migrations/` para cambios SQL versionados. **Supabase Auth** es el sistema elegido para HU-11; sus flujos todavía no están implementados. HU-06/T4 almacena evidencias en un bucket privado en **Supabase Storage**.
+Usar **Supabase / PostgreSQL** para la persistencia y reservar `supabase/migrations/` para cambios SQL versionados. **Supabase Auth** gestiona el acceso por enlace de correo y la sesión persistente del cliente web; HU-11/T4 añadirá la protección de rutas por rol. HU-06/T4 almacena evidencias en un bucket privado en **Supabase Storage**.
 
 La lógica de negocio se centralizará en el servidor web. Al crear tablas expuestas se deberán diseñar las políticas RLS correspondientes, además de autorizar operaciones en los puntos adecuados. Las credenciales con privilegios y los secretos no estarán accesibles desde la extensión o el frontend.
 

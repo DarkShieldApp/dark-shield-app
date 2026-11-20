@@ -30,6 +30,22 @@ body {
   line-height: 1.5;
 }
 
+.site-header {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 1rem 1.25rem 0;
+}
+
+.session-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
 .page-container {
   max-width: 760px;
   margin: 0 auto;
@@ -188,6 +204,11 @@ textarea.form-control {
 
 .btn-secondary:hover {
   background-color: var(--surface-alt);
+}
+
+.btn-secondary:disabled {
+  cursor: wait;
+  opacity: 0.7;
 }
 
 .preview-notice {

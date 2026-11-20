@@ -4,7 +4,9 @@ Supabase/PostgreSQL y Supabase Auth son las tecnologías adoptadas. HU-14/T1
 incorpora `public.profiles`, su primera migración, triggers, RLS y pruebas reales.
 T2 añade `public.roles` y un rol principal obligatorio por perfil. T3 añade permisos base y administración auditada. HU-11/T1–T2 añade el cliente
 web y acceso por enlace de correo con confirmación. La sesión persistente,
-renovación, cierre de sesión y autorización de rutas siguen pendientes de T3–T4.
+renovación automática, escucha de cambios y cierre de sesión de HU-11/T3 están
+implementados en el cliente web. La protección de rutas por rol de colaborador
+corresponde a T4.
 
 ## Proyecto remoto y diagnóstico
 

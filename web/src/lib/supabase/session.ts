@@ -13,8 +13,8 @@ interface SessionReader {
 
 /**
  * Token de acceso de la sesión del cliente de Supabase, para enviarlo como
- * `Authorization: Bearer` a la API. El cliente no conserva la sesión entre
- * instancias hasta que HU-11 T3 implemente su persistencia.
+ * `Authorization: Bearer` a la API. El cliente del navegador comparte la
+ * sesión persistida entre sus consumidores.
  */
 export async function getAccessToken(
   client: SessionReader = createBrowserSupabaseClient(),

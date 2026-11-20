@@ -1,16 +1,24 @@
 import 'client-only';
 
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { getSupabaseConfig } from './config';
 
-// Keep the browser client stateless; HU-11 T3 adds session persistence.
+let browserClient: SupabaseClient | undefined;
+
+// Share one persisted session across browser consumers.
 export function createBrowserSupabaseClient() {
+  if (browserClient) {
+    return browserClient;
+  }
+
   const { url, publishableKey } = getSupabaseConfig();
-  return createClient(url, publishableKey, {
+  browserClient = createClient(url, publishableKey, {
     auth: {
-      persistSession: false,
-      autoRefreshToken: false,
+      persistSession: true,
+      autoRefreshToken: true,
       detectSessionInUrl: true,
     },
   });
+
+  return browserClient;
 }
