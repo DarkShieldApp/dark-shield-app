@@ -40,7 +40,28 @@ la forma `{ "error": { "code", "message" } }`:
 | 503  | `POLICY_UNAVAILABLE`  | Política sin configurar, incoherente con T2 o historial temporal inválido. |
 | 503  | `SERVICE_UNAVAILABLE` | Fallo de servicio, persistencia o respuesta RPC inesperada.                |
 
-T5 consumirá el recibo y T6 ampliará la presentación de errores. No hay reintentos
+T6 completa dos casos de clasificación sin cambiar el contrato público:
+
+- Si la sesión caduca durante la consulta del perfil, `my_permissions` o
+  `assessment_policy`, se devuelve `401 UNAUTHENTICATED` con el mensaje
+  «Se requiere una sesión válida.», antes de escribir o recalcular.
+- Un `429` de Supabase Auth se trata como indisponibilidad temporal:
+  `503 SERVICE_UNAVAILABLE`, «No se pudo completar la valoración.».
+
+Para las consultas PostgREST se prioriza el estado HTTP: `401` identifica el
+fallo de autenticación. Solo si el estado no está disponible se usan los códigos
+`PGRST301`, `PGRST302` y `PGRST303`. No se inspeccionan mensajes ni se considera
+`42501` por sí solo una sesión caducada. `PGRST300` y los fallos de infraestructura
+mantienen el tratamiento de servicio no disponible. Un error inesperado de
+permisos al consultar datos conserva su tratamiento previo; la denegación del
+permiso efectivo continúa devolviendo `403 FORBIDDEN`. Véase la
+[clasificación oficial de PostgREST](https://docs.postgrest.org/en/stable/references/errors.html#group-3-jwt).
+El perfil compartido conserva el mensaje genérico de error y solo añade una
+clasificación interna, sin transportar mensajes, detalles ni pistas del proveedor.
+Todas estas respuestas mantienen `Cache-Control: private, no-store` y el JSON
+`{ "error": { "code", "message" } }`.
+
+T5 consumirá el recibo y presentará los mensajes de error en la interfaz. No hay reintentos
 automáticos: una pérdida de respuesta puede ocurrir después del commit. Repetir
 la petición crea otra fila; solo cuenta la última, pero no hay idempotencia ni
 deduplicación de reintentos. No se compensa un fallo de red borrando valoraciones.
@@ -175,7 +196,7 @@ añade su latencia a la respuesta; no se incorpora una cola ni un timeout nuevo.
 ## Alcance y verificación
 
 T7 conecta exclusivamente las valoraciones con el servicio existente de HU-09.
-No implementa interfaz T5, UX T6, login HU-11, E2E T8 ni la integración de
+No implementa interfaz ni presentación de mensajes T5, login HU-11, E2E T8 ni la integración de
 evidencias HU-06/T5. HU-11 debe suministrar y renovar tokens para el flujo final.
 
 - Vitest importa la ruta real y ejecuta T2, sesión y consulta de perfil con la E/S

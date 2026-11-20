@@ -3,7 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 vi.mock('server-only', () => ({}));
 
-import { getMyProfile } from '../src/server/profile-query';
+import { getMyProfile, ProfileQueryError } from '../src/server/profile-query';
 
 // HU-10/T3: Test the authenticated profile query.
 
@@ -88,4 +88,37 @@ describe('getMyProfile', () => {
 
     expect(eqActive).toHaveBeenCalledWith('is_active', true);
   });
+
+  it.each([
+    { status: 401, code: 'PGRST301', authenticationFailed: true },
+    { status: undefined, code: 'PGRST303', authenticationFailed: true },
+    { status: 403, code: '42501', authenticationFailed: false },
+    { status: 500, code: 'PGRST300', authenticationFailed: false },
+  ])(
+    'keeps a compatible sanitized error for $status/$code',
+    async ({ status, code, authenticationFailed }) => {
+      maybeSingle.mockResolvedValue({
+        data: exampleProfile,
+        status,
+        error: {
+          code,
+          message: 'private detail',
+          details: 'private detail',
+          hint: 'private hint',
+        },
+      });
+      const error = await getMyProfile(client, userId).catch(
+        (caught: unknown) => caught,
+      );
+      expect(error).toBeInstanceOf(Error);
+      expect(error).toBeInstanceOf(ProfileQueryError);
+      expect(error).toMatchObject({
+        message: 'Unable to retrieve the user profile.',
+        authenticationFailed,
+      });
+      expect(error).not.toHaveProperty('cause');
+      expect(error).not.toHaveProperty('code');
+      expect(JSON.stringify(error)).not.toContain('private');
+    },
+  );
 });
