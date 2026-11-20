@@ -116,6 +116,87 @@ describe('autenticación por nombre de usuario', () => {
     ).resolves.toBeNull();
   });
 
+  it('rechaza claves secretas con formato no permitido', async () => {
+    vi.stubEnv('SUPABASE_SECRET_KEY', 'service_role');
+
+    await expect(authenticateUsername('ejemplo', 'password')).rejects.toThrow(
+      'debe ser una clave secreta sb_secret_',
+    );
+    expect(createClient).not.toHaveBeenCalled();
+  });
+
+  it('propaga fallos al consultar el perfil', async () => {
+    profileQuery.maybeSingle.mockResolvedValueOnce({
+      data: null,
+      error: { message: 'database unavailable' },
+    });
+
+    await expect(authenticateUsername('ejemplo', 'password')).rejects.toThrow(
+      'No se pudo consultar la cuenta.',
+    );
+    expect(adminClient.auth.admin.getUserById).not.toHaveBeenCalled();
+  });
+
+  it('trata usuario inexistente en Auth como credenciales inválidas', async () => {
+    adminClient.auth.admin.getUserById.mockResolvedValueOnce({
+      data: { user: null },
+      error: { status: 404 },
+    });
+
+    await expect(
+      authenticateUsername('ejemplo', 'password'),
+    ).resolves.toBeNull();
+    expect(publicClient.auth.signInWithPassword).not.toHaveBeenCalled();
+  });
+
+  it('propaga errores no esperados al consultar el usuario de Auth', async () => {
+    adminClient.auth.admin.getUserById.mockResolvedValueOnce({
+      data: { user: null },
+      error: { status: 500 },
+    });
+
+    await expect(authenticateUsername('ejemplo', 'password')).rejects.toThrow(
+      'No se pudo consultar la cuenta.',
+    );
+  });
+
+  it('no inicia sesión si la cuenta de Auth no tiene correo', async () => {
+    adminClient.auth.admin.getUserById.mockResolvedValueOnce({
+      data: { user: { email: null } },
+      error: null,
+    });
+
+    await expect(
+      authenticateUsername('ejemplo', 'password'),
+    ).resolves.toBeNull();
+    expect(publicClient.auth.signInWithPassword).not.toHaveBeenCalled();
+  });
+
+  it.each([{ status: 0 }, { status: 500 }, { status: 503 }])(
+    'informa fallos transitorios del servicio de Auth: %j',
+    async (error) => {
+      publicClient.auth.signInWithPassword.mockResolvedValueOnce({
+        data: { session: null },
+        error,
+      });
+
+      await expect(authenticateUsername('ejemplo', 'password')).rejects.toThrow(
+        'El servicio de autenticación no está disponible.',
+      );
+    },
+  );
+
+  it('no devuelve una sesión ausente aunque no haya error de contraseña', async () => {
+    publicClient.auth.signInWithPassword.mockResolvedValueOnce({
+      data: { session: null },
+      error: null,
+    });
+
+    await expect(
+      authenticateUsername('ejemplo', 'password'),
+    ).resolves.toBeNull();
+  });
+
   it('requiere una clave secreta de servidor', async () => {
     vi.stubEnv('SUPABASE_SECRET_KEY', undefined);
 
