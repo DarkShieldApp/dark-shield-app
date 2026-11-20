@@ -15,6 +15,13 @@ drop policy report_evidences_objects_delete_own_unregistered on storage.objects;
 drop table public.report_evidences;
 -- The T3 assignment FK references roles; this replay rolls the drop back.
 drop table public.role_permissions;
+insert into auth.users (id, raw_user_meta_data) values
+  ('f1111111-1111-4111-8111-111111111111', '{"role_code":"admin", "username":"existing"}');
+update public.profiles set display_name = 'Existing', trust_level = 42, is_active = false
+  where id = 'f1111111-1111-4111-8111-111111111111';
+create temporary table before_t2 as
+  select id, display_name, username, trust_level, is_active, created_at, updated_at
+  from public.profiles;
 alter table public.profiles drop column role_code;
 drop table public.roles;
 -- Restore the historical timestamp function from the actual T1 statements.
@@ -24,17 +31,10 @@ select replace(statement, 'create function private.set_profile_updated_at()',
   where version = '20261110154948'
   and statement like '%create function private.set_profile_updated_at()%'
 \gexec
-insert into auth.users (id, raw_user_meta_data) values
-  ('f1111111-1111-4111-8111-111111111111', '{"role_code":"admin"}');
-update public.profiles set display_name = 'Existing', trust_level = 42, is_active = false
-  where id = 'f1111111-1111-4111-8111-111111111111';
-create temporary table before_t2 as
-  select id, display_name, trust_level, is_active, role_code, created_at, updated_at
-  from public.profiles;
 select unnest(statements) from supabase_migrations.schema_migrations
   where version = '20261111113011'
 \gexec
-select results_eq($$select id, display_name, trust_level, is_active, created_at, updated_at
+select results_eq($$select id, display_name, username, trust_level, is_active, created_at, updated_at
   from public.profiles order by id$$, $$select * from before_t2 order by id$$,
   'T2 preserves every existing profile attribute and timestamp');
 select is((select count(*) from public.profiles where role_code = 'collaborator'),

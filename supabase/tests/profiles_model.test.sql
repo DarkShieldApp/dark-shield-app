@@ -42,6 +42,9 @@ insert into auth.users (id, raw_user_meta_data) values
 select is((select username from public.profiles
   where id = 'a3333333-3333-4333-8333-333333333333'),
   'example', 'Auth normalizes and stores the requested username');
+select throws_ok($$insert into auth.users (id, raw_user_meta_data) values
+  ('a4444444-4444-4444-8444-444444444444', '{"username":"@Example"}')$$,
+  '23505', null, 'Duplicate usernames are rejected');
 create temporary table username_updated_before as
   select id, updated_at from public.profiles
   where id = 'a3333333-3333-4333-8333-333333333333';
@@ -54,9 +57,6 @@ select is((select username from public.profiles
 select ok((select p.updated_at > b.updated_at
   from public.profiles p join username_updated_before b using (id)),
   'Changing the username advances the profile timestamp');
-select throws_ok($$insert into auth.users (id, raw_user_meta_data) values
-  ('a4444444-4444-4444-8444-444444444444', '{"username":"@Example"}')$$,
-  '23505', null, 'Duplicate usernames are rejected');
 select throws_ok($$insert into auth.users (id, raw_user_meta_data) values
   ('a5555555-5555-4555-8555-555555555555', '{"username":"ab"}')$$,
   '23514', null, 'Usernames shorter than three characters are rejected');

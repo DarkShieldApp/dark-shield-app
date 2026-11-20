@@ -183,8 +183,8 @@ la migración del historial. La extensión de inspección se crea dentro de la t
 La CLI prepara pgTAP; no se añaden dependencias al esquema de aplicación.
 
 - `profiles_model.test.sql`: columnas, restricciones, creación automática,
-  metadatos ignorados, valores límite, fechas, FK conservadora y rollback ante
-  un fallo de creación.
+  metadatos ignorados, unicidad y validación de nombres de usuario, valores
+  límite, fechas, FK conservadora y rollback ante un fallo de creación.
 - `profiles_rls.test.sql`: ACL de tabla/columnas, funciones privadas y consultas
   como `anon` y `authenticated` con `SET LOCAL ROLE` y `request.jwt.claims`.
   Comprueba identidad propia/ajena/ausente, cuenta inactiva y escrituras denegadas.
@@ -199,8 +199,9 @@ La CLI prepara pgTAP; no se añaden dependencias al esquema de aplicación.
 - `roles_rls.test.sql`: lectura autenticada, denegación anónima, ACL de tabla y
   columna, escrituras y autopromoción denegadas; grants temporales aíslan RLS.
 - `roles_backfill.test.sql`: restaura transaccionalmente el esquema T1 y reproduce
-  T2 desde el historial real; verifica preservación de atributos y fechas y el
-  default para perfiles existentes. La prueba histórica de T1 sigue funcionando:
+  T2 desde el historial real; verifica preservación de atributos (incluido el
+  nombre de usuario) y fechas, además del default para perfiles existentes. La
+  prueba histórica de T1 sigue funcionando:
   al eliminar profiles desaparece su FK saliente y roles permanece sin conflicto.
 
 Cada archivo usa `BEGIN`/`ROLLBACK`, UUID propios y un plan pgTAP; datos, DDL y
