@@ -611,7 +611,7 @@ Las pruebas `profiles_backfill`, `reports_backfill` y `roles_backfill` reaplican
 
 **Requisito relacionado:** HU-09 — Consultar la credibilidad de un reporte.
 **Origen de esta definición:** HU-09, T1 — Diseñar un algoritmo de ponderación que distinga entre votos de usuarios según su nivel de confianza.
-**Estado:** diseño (T1), cálculo y acceso a datos implementados para HU-09/T2, estado en el listado con HU-01/T7 y explicación visible de factores implementada para HU-09/T3. La confirmación de evidencias ya recalcula tras guardar (HU-06/T5). Siguen pendientes la llamada tras guardar una valoración (HU-08/T4 y T7) y la de la moderación de evidencias, que aún no tiene endpoint. Respeta el contrato acordado en la PR #13 (fila «Credibilidad (T5)» de las decisiones de HU-06/T4) y tiene en cuenta HU-10/T2–T3 (PR #28).
+**Estado:** diseño (T1), cálculo y acceso a datos implementados para HU-09/T2, estado en el listado con HU-01/T7 y explicación visible de factores implementada para HU-09/T3. La confirmación de evidencias ya recalcula tras guardar (HU-06/T5) y HU-08/T7 conecta las valoraciones confirmadas con el cálculo existente ([contrato de integración](api/assessments.md#integración-con-credibilidad--hu-08t7)); queda pendiente la llamada de moderación de evidencias, que aún no tiene endpoint. Respeta el contrato acordado en la PR #13 (fila «Credibilidad (T5)» de las decisiones de HU-06/T4) y tiene en cuenta HU-10/T2–T3 (PR #28).
 
 ### Criterios que debe cumplir
 
@@ -871,7 +871,7 @@ Ninguna función inventa credibilidad: si no puede calcularla lanza `Credibility
 
 `getReportsCredibility` devuelve un `Map` por identificador en minúsculas y omite los reportes inexistentes o no visibles; no registra nada (decide quien llama). `recalculateReportCredibility` registra cualquier fallo con su `context` (causa y `triggerId`) antes de relanzarlo.
 
-#### Cómo invocarlo tras guardar (HU-06/T5, HU-08/T4)
+#### Cómo invocarlo tras guardar (HU-06/T5, HU-08/T7)
 
 Después de persistir y antes de responder, sin que un fallo cambie la respuesta:
 
@@ -888,7 +888,7 @@ try {
 }
 ```
 
-HU-06/T5 lo conecta directamente en `confirmEvidence` (`web/src/server/evidences.ts`), con el cliente de la petición y la dependencia inyectable `EvidenceServiceOptions.recalculateCredibility` ([docs/api/evidences.md](api/evidences.md), paso 6). Como el cálculo no persiste nada, la llamada solo sirve hoy para registrar fallos y comprobar que el reporte es calculable; HU-09/T3 y HU-01/T7 obtienen el valor actual al leer.
+HU-06/T5 lo conecta directamente en `confirmEvidence` (`web/src/server/evidences.ts`), con el cliente de la petición y la dependencia inyectable `EvidenceServiceOptions.recalculateCredibility` ([docs/api/evidences.md](api/evidences.md), paso 6). También puede usarse el enganche opcional `EvidenceServiceOptions.onEvidenceSaved` después de recalcular. Como el cálculo no persiste nada, estas llamadas solo sirven hoy para registrar fallos y comprobar que el reporte es calculable; HU-09/T3 y HU-01/T7 obtienen el valor actual al leer. HU-08/T7 conecta las valoraciones con este servicio después de validar su recibo, usando el cliente autenticado en el tercer argumento `{ client }` y sin modificar la interfaz.
 
 #### Límites conocidos
 
@@ -904,7 +904,7 @@ Puntos que había que acordar con HU-08 y su estado tras HU-09/T2:
 3. ~~**Reportes propios.**~~ **Resuelto (D3):** el cálculo los ignora; HU-08/T4 deberá rechazarlos al registrar.
 4. ~~**Umbral de confianza y revocación.**~~ **Resuelto (D4):** la revocación no anula valoraciones emitidas; se excluyen los perfiles inactivos y se usa la confianza actual. El valor del umbral (`ASSESSMENTS_MIN_TRUST_LEVEL`) sigue siendo cosa de HU-08 y HU-10.
 5. **Abierto — Estados del reporte** que impidan valorar (HU-05). Para la credibilidad no hace falta nada más (D6).
-6. **Abierto — Invocación:** después de registrar una valoración, HU-08/T4 debe llamar a `recalculateReportCredibility(reportId, { cause: 'validation_added', triggerId: assessmentId })` dentro de un `try/catch` que no cambie la respuesta (véase «Cómo invocarlo tras guardar»).
+6. **Implementado — Invocación (HU-08/T7):** después de confirmar una validación o invalidación, se espera `recalculateReportCredibility(reportId, { cause: 'validation_added', triggerId: assessmentId }, { client })` dentro de un `try/catch`. Un fallo ya registrado por HU-09 no cambia el `201` ni el recibo, no elimina la valoración y no se registra de nuevo (véase «Cómo invocarlo tras guardar»).
 7. ~~**Lectura de la tabla cerrada.**~~ **Resuelto (D5):** `credibility_internal.report_inputs` lee `report_assessments` y devuelve solo agregados; las pruebas pgTAP comprueban que la tabla sigue cerrada y que no se exponen identidades.
 
 Fuera de HU-08: la llamada con `evidence_added` ya está conectada (HU-06/T5) y la presentación en el listado también (HU-01/T7); queda la llamada con `evidence_moderated` cuando exista la operación de moderación.
