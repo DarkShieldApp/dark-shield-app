@@ -13,6 +13,7 @@ import {
   type EvidenceKind,
 } from '../lib/evidences/rules';
 import { SupabaseConfigurationError } from '../lib/supabase/config';
+import { recalculateReportCredibility } from './credibility';
 import { reencodeEvidenceImage } from './evidence-images';
 import {
   createAuthenticatedSupabaseClient,
@@ -24,7 +25,8 @@ import {
  * Evidencias de reportes (HU-06/T4). Contrato en docs/domain-design.md y
  * docs/api/evidences.md. Se trabaja siempre como `authenticated` con el token
  * Bearer del usuario: la autorización la decide la RLS de la tabla y del
- * bucket; este módulo valida, recodifica y compensa los fallos.
+ * bucket, y los POST exigen además el permiso `evidences.add` (HU-06/CA1);
+ * este módulo valida, recodifica y compensa los fallos.
  */
 export const EVIDENCE_BUCKET = 'report-evidences';
 
@@ -77,9 +79,13 @@ export interface EvidenceServiceOptions {
   now?: () => Date;
   logError?: (message: string, error: unknown) => void;
   /**
-   * Se llama tras guardar la evidencia; un fallo se registra y no cambia la
-   * respuesta. HU-06/T5 lo usará para recalcular la credibilidad del reporte
-   * (HU-09/T2) cuando esté disponible.
+   * Recálculo de la credibilidad tras guardar (HU-06/T5); por defecto,
+   * `recalculateReportCredibility` (HU-09/T2) con el cliente de la petición.
+   */
+  recalculateCredibility?: typeof recalculateReportCredibility;
+  /**
+   * Se llama tras guardar la evidencia y recalcular la credibilidad; un fallo
+   * se registra y no cambia la respuesta.
    */
   onEvidenceSaved?: (evidence: EvidenceResource) => Promise<void>;
 }
@@ -159,8 +165,8 @@ function toResource(row: EvidenceRow): EvidenceResource {
 }
 
 /**
- * Sesión (401), perfil activo si se exige (403) y reporte legible (404), en
- * este orden. Devuelve el cliente que se usará en el resto de la operación.
+ * Sesión (401); si se exige, perfil activo (403) y permiso `evidences.add`
+ * (403); y reporte legible (404), en este orden. Devuelve el cliente que se usará en el resto de la operación.
  */
 async function authorize(
   { reportId, accessToken }: RequestContext,
@@ -205,6 +211,31 @@ async function authorize(
         403,
         'FORBIDDEN_ROLE',
         'Solo las cuentas con rol de colaborador pueden aportar evidencias.',
+      );
+    }
+
+    // HU-06/CA1: la RPC de HU-14/T3 deriva el sujeto de auth.uid() y lee la
+    // matriz vigente; no se deduce el permiso a partir de role_code.
+    const { data: effective, error: permissionError } =
+      await client.rpc('my_permissions');
+    if (permissionError) {
+      throw new EvidenceApiError(
+        500,
+        'PERMISSION_LOOKUP_FAILED',
+        'No se pudieron comprobar los permisos.',
+      );
+    }
+    const permissions = (effective as { permissions?: unknown } | null)
+      ?.permissions;
+    if (
+      !Array.isArray(permissions) ||
+      !permissions.every((permission) => typeof permission === 'string') ||
+      !permissions.includes('evidences.add')
+    ) {
+      throw new EvidenceApiError(
+        403,
+        'FORBIDDEN_MISSING_PERMISSION',
+        'No tienes permiso para aportar evidencias.',
       );
     }
   }
@@ -490,7 +521,19 @@ export async function confirmEvidence(
   await removeObjects(client, [rawPath], logError);
   const evidence = toResource(row);
 
-  // HU-06/T5: aquí se recalculará la credibilidad del reporte.
+  // HU-06/T5: recalcula la credibilidad del reporte. Solo se llega aquí si la
+  // evidencia quedó registrada; un fallo ya lo registra la propia función con
+  // su causa y no cambia el 201 ni compensa la evidencia.
+  try {
+    await (options.recalculateCredibility ?? recalculateReportCredibility)(
+      evidence.reportId,
+      { cause: 'evidence_added', triggerId: evidence.id },
+      { client, logError },
+    );
+  } catch {
+    // Ya registrado; la respuesta no cambia.
+  }
+
   if (options.onEvidenceSaved) {
     try {
       await options.onEvidenceSaved(evidence);

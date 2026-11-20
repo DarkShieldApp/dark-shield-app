@@ -23,11 +23,18 @@ el [contrato de consulta](../domain-design.md) y la [API de autorización](autho
 | **Método HTTP**          | `POST`                                                                                                     |
 | **Ruta**                 | `/api/reports`                                                                                             |
 | **Autenticación**        | Obligatoria mediante cabecera `Authorization: Bearer <access_token>` (token JWT emitido por Supabase Auth) |
-| **Perfil requerido**     | Usuario autenticado con fila activa (`is_active = true`) en `public.profiles`                              |
+| **Perfil requerido**     | Usuario autenticado con fila activa (`is_active = true`) y rol `collaborator` en `public.profiles`         |
 | **Formato de petición**  | `application/json`                                                                                         |
 | **Formato de respuesta** | `application/json`                                                                                         |
 
 ---
+
+La creación requiere sesión y perfil activo con rol `collaborator`; la ruta
+`POST` valida además la identidad y no acepta `author_id` desde el cuerpo. La
+tabla `public.reports` mantiene revocados los permisos de escritura y no tiene
+política de inserción. Por tanto, la inserción seguirá denegada por RLS hasta
+que se revise y aplique una migración de permisos y política; esta PR no la
+aplica.
 
 ## 2. Cabeceras HTTP esperadas
 

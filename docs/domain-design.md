@@ -493,58 +493,58 @@ Comprobar la firma no garantiza que el archivo sea inocuo. El análisis antiviru
 
 **Estado:** acordado en la revisión de la PR #13 (19 de noviembre de 2026): preguntas 1–4 con Gregorio (HU-05/T4), 5–7 con Ildefonso (HU-06/T1 y HU-11) y 8–11 con Iván (HU-09/T2 y PO). La eliminación de metadatos con la subida directa se cerró después: el servidor recodifica la imagen con `sharp` al confirmar (ver más abajo). Implementado en tres piezas: el modelo y su RLS (HU-06/T4a), la lectura pública de reportes (respuesta 2, integrada en la PR #21) y el endpoint con el _bucket_ y sus políticas (HU-06/T4), especificado en [docs/api/evidences.md](api/evidences.md).
 
-T3 define el permiso base `evidences.add`. Los handlers, la RLS y las políticas de Storage de HU-06/T4 todavía no consultan esa asignación. Revocarla por sí sola deja vigente el acceso que esas reglas conceden.
+T3 define el permiso base `evidences.add`. Desde HU-06/CA1, los dos `POST` de evidencias (pedir las URL de subida y confirmar) requieren un perfil activo con rol `collaborator` y comprueban ese permiso con `rpc('my_permissions')` antes del reporte; revocarlo bloquea nuevas subidas y confirmaciones con `403 FORBIDDEN_MISSING_PERMISSION`. `GET` no lo consulta. La RLS y las políticas de Storage aún no exigen el rol ni el permiso: la API los valida, pero hace falta actualizar esas políticas para cerrar el acceso directo con el token del usuario.
 
 #### Decisiones
 
-| Tema                    | Decisión                                                                                                                                                                                                                                      | Origen                          |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
-| Almacenamiento          | Supabase Storage, _bucket_ **privado** `report-evidences`. Objetos en `{user_id}/{report_id}/{uuid}.{ext}`. En la base de datos se guarda solo la ruta, nunca una URL.                                                                        | 5                               |
-| Lectura de archivos     | El servidor genera una URL firmada bajo demanda (`createSignedUrl`) que caduca a los **120 s** (rango acordado: de 60 s a 5 min).                                                                                                             | 5                               |
-| Subida                  | Directa desde el cliente con `createSignedUploadUrl`, en dos pasos, para no pasar los archivos por el límite de cuerpo de Vercel (~4,5 MB).                                                                                                   | 5                               |
-| Tipos y tamaño          | Solo `image/png`, `image/jpeg` e `image/webp`; **sin PDF**. Máximo 10 MiB (`EVIDENCE_MAX_FILE_BYTES`). Se aplican en `rules.ts`, en el _bucket_ (`file_size_limit` y `allowed_mime_types`) y en el handler, que no se fía del `Content-Type`. | 5 y 11 (el PO fija los valores) |
-| Sesión                  | Token Bearer + `supabase.auth.getUser(token)` con un cliente sin privilegios: las consultas se ejecutan como `authenticated` bajo RLS. Ni `service_role` en los handlers ni `@supabase/ssr` por ahora.                                        | 6, con el patrón de `main`      |
-| Errores de acceso       | `401 UNAUTHENTICATED` con el mismo cuerpo para token ausente, caducado o inválido; `403` si está autenticado sin permiso; `404` cuando la RLS oculta el recurso.                                                                              | 7                               |
-| Borrado de reportes     | `ON DELETE RESTRICT`: el borrado en cascada dejaría objetos huérfanos en Storage.                                                                                                                                                             | 1                               |
-| Visibilidad de reportes | Lectura pública (`anon` y `authenticated`), sin estados por ahora; `anon` no lee `author_id`. La escritura sigue siendo cosa de HU-05.                                                                                                        | 2                               |
-| Quién aporta            | Cualquier perfil activo, en cualquier reporte legible, también de otros autores.                                                                                                                                                              | 3                               |
-| Límite                  | Como mucho `EVIDENCE_MAX_FILES` (5) evidencias por colaborador y reporte, ocultas incluidas; también limita cada envío. Handler y _trigger_ en la base de datos.                                                                              | 4                               |
-| Moderación              | `visible` por defecto (moderación reactiva). Solo un administrador activo (`profiles.role_code = 'admin'`) cambia `moderation_status`. Una evidencia oculta deja de contar para la credibilidad, sin restar.                                  | 9 y 10                          |
-| Credibilidad (T5)       | `recalculateReportCredibility(reportId, context)` en `web/src/server/credibility.ts`, asíncrona e idempotente, invocada tras guardar la evidencia dentro de un `try/catch`: si falla, se registra y la respuesta sigue siendo `201`.          | 8                               |
+| Tema                    | Decisión                                                                                                                                                                                                                                                  | Origen                          |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| Almacenamiento          | Supabase Storage, _bucket_ **privado** `report-evidences`. Objetos en `{user_id}/{report_id}/{uuid}.{ext}`. En la base de datos se guarda solo la ruta, nunca una URL.                                                                                    | 5                               |
+| Lectura de archivos     | El servidor genera una URL firmada bajo demanda (`createSignedUrl`) que caduca a los **120 s** (rango acordado: de 60 s a 5 min).                                                                                                                         | 5                               |
+| Subida                  | Directa desde el cliente con `createSignedUploadUrl`, en dos pasos, para no pasar los archivos por el límite de cuerpo de Vercel (~4,5 MB).                                                                                                               | 5                               |
+| Tipos y tamaño          | Solo `image/png`, `image/jpeg` e `image/webp`; **sin PDF**. Máximo 10 MiB (`EVIDENCE_MAX_FILE_BYTES`). Se aplican en `rules.ts`, en el _bucket_ (`file_size_limit` y `allowed_mime_types`) y en el handler, que no se fía del `Content-Type`.             | 5 y 11 (el PO fija los valores) |
+| Sesión                  | Token Bearer + `supabase.auth.getUser(token)` con un cliente sin privilegios: las consultas se ejecutan como `authenticated` bajo RLS. Ni `service_role` en los handlers ni `@supabase/ssr` por ahora.                                                    | 6, con el patrón de `main`      |
+| Errores de acceso       | `401 UNAUTHENTICATED` con el mismo cuerpo para token ausente, caducado o inválido; en los `POST`, `403 FORBIDDEN_INACTIVE_PROFILE`, `403 FORBIDDEN_ROLE`, `403 FORBIDDEN_MISSING_PERMISSION` sin `evidences.add` y `404` cuando la RLS oculta el recurso. | 7                               |
+| Borrado de reportes     | `ON DELETE RESTRICT`: el borrado en cascada dejaría objetos huérfanos en Storage.                                                                                                                                                                         | 1                               |
+| Visibilidad de reportes | Lectura pública (`anon` y `authenticated`), sin estados por ahora; `anon` no lee `author_id`. La escritura sigue siendo cosa de HU-05.                                                                                                                    | 2                               |
+| Quién aporta            | La API exige perfil activo, rol `collaborator` y permiso `evidences.add`. La RLS aún solo exige perfil activo, por lo que la política debe actualizarse para cerrar accesos directos.                                                                     | 3                               |
+| Límite                  | Como mucho `EVIDENCE_MAX_FILES` (5) evidencias por colaborador y reporte, ocultas incluidas; también limita cada envío. Handler y _trigger_ en la base de datos.                                                                                          | 4                               |
+| Moderación              | `visible` por defecto (moderación reactiva). Solo un administrador activo (`profiles.role_code = 'admin'`) cambia `moderation_status`. Una evidencia oculta deja de contar para la credibilidad, sin restar.                                              | 9 y 10                          |
+| Credibilidad (T5)       | `recalculateReportCredibility(reportId, context)` en `web/src/server/credibility.ts`, asíncrona e idempotente, invocada tras guardar la evidencia dentro de un `try/catch`: si falla, se registra y la respuesta sigue siendo `201`.                      | 8                               |
 
 La sesión se aparta de la propuesta de usar `@supabase/ssr` (respuesta 6) para seguir el patrón que ya usa `POST /api/reports` en `main`: la plataforma y la extensión envían `Authorization: Bearer <access_token>` y el handler valida el token contra Auth con `getUser(token)`, nunca con `getSession()`. Cuando HU-11 introduzca cookies SSR, el cambio queda en la obtención del token; la autorización sigue siendo la RLS.
 
 #### Modelo y RLS de la tabla
 
-`public.report_evidences` se describe en "Modelo persistente de evidencias (HU-06/T4a)". En resumen: el servidor genera `id`; `storage_path` debe coincidir con `{uploaded_by}/{report_id}/{id}.{png|jpg|webp}`; `UNIQUE (report_id, sha256)`; las dos claves ajenas son `RESTRICT`; un _trigger_ limita a 5 por colaborador y reporte. `authenticated` lee las evidencias visibles de reportes legibles (el autor, todas las suyas; un admin activo, todas), inserta en su nombre con el perfil activo y solo un admin activo actualiza `moderation_status`. Nadie borra filas directamente.
+`public.report_evidences` se describe en "Modelo persistente de evidencias (HU-06/T4a)". En resumen: el servidor genera `id`; `storage_path` debe coincidir con `{uploaded_by}/{report_id}/{id}.{png|jpg|webp}`; `UNIQUE (report_id, sha256)`; las dos claves ajenas son `RESTRICT`; un _trigger_ limita a 5 por colaborador y reporte. `authenticated` lee las evidencias visibles de reportes legibles (el autor, todas las suyas; un admin activo, todas), inserta en su nombre con el perfil activo y solo un admin activo actualiza `moderation_status`. La política de inserción aún no comprueba el rol ni `evidences.add`; la API sí. Nadie borra filas directamente.
 
 #### _Bucket_ y políticas de `storage.objects`
 
 Migración del endpoint: `insert into storage.buckets` de `report-evidences` con `public = false`, `file_size_limit = 10485760` y `allowed_mime_types = {image/png, image/jpeg, image/webp}`. Políticas para `authenticated` (ninguna para `anon`; ninguna de actualización, así que no se sobrescriben objetos):
 
-| Operación | Condición, además de `bucket_id = 'report-evidences'`                                                                                                                                                                                           |
-| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `insert`  | La primera carpeta es `auth.uid()`, el perfil está activo y tiene el rol `collaborator`, la segunda carpeta es un reporte legible y el nombre del archivo tiene la forma `{uuid}.{png\|jpg\|webp}`. `createSignedUploadUrl` exige este permiso. |
-| `select`  | La primera carpeta es `auth.uid()` (sus subidas, confirmadas o no), **o** existe una fila de `report_evidences` con ese `storage_path` legible para quien consulta (se delega en la RLS de la tabla). `createSignedUrl` lo exige.               |
-| `delete`  | La primera carpeta es `auth.uid()` y el objeto **no** está registrado en `report_evidences`. Sirve para la compensación y para limpiar subidas sin confirmar; una evidencia confirmada no se puede borrar así.                                  |
+| Operación | Condición, además de `bucket_id = 'report-evidences'`                                                                                                                                                                                         |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `insert`  | La RLS actual exige la carpeta propia, perfil activo, reporte legible y nombre `{uuid}.{png\|jpg\|webp}`. La API exige además rol `collaborator` y permiso `evidences.add` antes de firmar la URL; falta reflejar ambos requisitos en la RLS. |
+| `select`  | La primera carpeta es `auth.uid()` (sus subidas, confirmadas o no), **o** existe una fila de `report_evidences` con ese `storage_path` legible para quien consulta (se delega en la RLS de la tabla). `createSignedUrl` lo exige.             |
+| `delete`  | La primera carpeta es `auth.uid()` y el objeto **no** está registrado en `report_evidences`. Sirve para la compensación y para limpiar subidas sin confirmar; una evidencia confirmada no se puede borrar así.                                |
 
 #### Flujo de subida en dos pasos
 
 1. **Pedir las URL de subida.** `POST /api/reports/{reportId}/evidences/uploads` con `{ "files": [{ "name": "captura.png", "type": "image/png", "size": 48211 }] }` (de 1 a 5 archivos).
-   - El servidor comprueba la sesión (401), el perfil activo con rol `collaborator` (403) y que el reporte sea legible (404).
+   - El servidor comprueba la sesión (401), el perfil activo (403), el rol `collaborator` (403), el permiso `evidences.add` (403) y que el reporte sea legible (404), en ese orden.
    - Valida con `rules.ts` lo declarado: nombre, extensión, MIME y tamaño. La firma se comprueba al confirmar, con los bytes reales.
    - Comprueba que el colaborador no supere 5 evidencias en el reporte contando las ya guardadas; el _trigger_ es la garantía final.
    - Por cada archivo genera un `uploadId` (UUID) y la ruta `{user_id}/{reportId}/{uploadId}.{ext}`, y llama a `createSignedUploadUrl(ruta)` sin `upsert`.
    - Responde `201` con `{ "uploads": [{ "uploadId", "path", "token", "signedUrl" }] }`, en el mismo orden que `files`.
 2. **Subir.** El cliente sube cada archivo con `uploadToSignedUrl(path, token, file, { contentType })`. Storage aplica los límites del _bucket_.
 3. **Confirmar.** `POST /api/reports/{reportId}/evidences` con `{ "uploadId": "…", "originalName": "captura.png" }`, una evidencia por petición.
-   - Sesión (401), perfil activo con rol `collaborator` (403) y reporte legible (404).
+   - Sesión (401), perfil activo (403), rol `collaborator` (403), permiso `evidences.add` (403) y reporte legible (404).
    - Reconstruye la ruta a partir del usuario, del reporte, del `uploadId` y de la extensión de `originalName`; nunca acepta una ruta del cliente.
    - Si el objeto no existe: `400 EVIDENCE_UPLOAD_MISSING`.
    - Descarga el objeto y valida con `validateEvidenceFile` usando su tamaño real y sus primeros bytes. Si no es válido, borra el objeto y responde `400 EVIDENCE_REJECTED`.
    - Recodifica la imagen con `sharp`, valida la copia limpia y la guarda bajo un nuevo `evidenceId`. Calcula el `sha256` de esa copia e inserta la fila con `id = evidenceId`. Tras registrar la evidencia, retira el original. Si la inserción falla, intenta borrar ambos objetos: el _trigger_ del límite da `400 EVIDENCE_REJECTED` (`EVIDENCE_TOO_MANY`), el contenido repetido da `409 EVIDENCE_DUPLICATE` y cualquier otro fallo, `500 EVIDENCE_PERSISTENCE_FAILED`.
    - Responde `201` con `{ "evidence": { "id", "reportId", "originalName", "mimeType", "sizeBytes", "moderationStatus", "createdAt" } }`.
-   - **Punto de enganche de la T5:** después de la inserción y antes de responder, en un `try/catch` que registre el error sin cambiar el `201`. La T5 no se implementa hasta que HU-09/T2 esté en `main`.
+   - **Recálculo de la credibilidad (HU-06/T5, implementado):** después de la inserción y de retirar el original, y antes de responder, llama una vez a `recalculateReportCredibility(reportId, { cause: 'evidence_added', triggerId: evidenceId }, { client, logError })` con el cliente de la petición, dentro de un `try/catch`: un fallo queda registrado por la propia función y la respuesta sigue siendo el mismo `201`, sin detalles del error y sin compensar la evidencia. Si la confirmación falla o se rechaza no se recalcula, y una confirmación repetida (`400 EVIDENCE_UPLOAD_MISSING`, porque el original ya se retiró) tampoco. El servicio se inyecta como el resto de dependencias (`EvidenceServiceOptions.recalculateCredibility`). Después se ejecuta el enganche opcional `onEvidenceSaved`.
 
 #### `GET /api/reports/{reportId}/evidences`
 
@@ -562,6 +562,7 @@ Mismo formato que el resto de la API: `{ "error": { "code", "message", "details"
 | `401`  | `UNAUTHENTICATED`                                                 | Token ausente, caducado o inválido; siempre con el mensaje «Sesión no válida o caducada.».                                                        |
 | `403`  | `FORBIDDEN_INACTIVE_PROFILE`                                      | Perfil inexistente o inactivo (mismo código que `POST /api/reports`).                                                                             |
 | `403`  | `FORBIDDEN_ROLE`                                                  | El perfil activo no tiene el rol `collaborator`.                                                                                                  |
+| `403`  | `FORBIDDEN_MISSING_PERMISSION`                                    | El perfil activo no tiene el permiso `evidences.add`.                                                                                             |
 | `404`  | `REPORT_NOT_FOUND`                                                | `reportId` mal formado, inexistente o no legible: no se distingue «no existe» de «no es visible».                                                 |
 | `409`  | `EVIDENCE_DUPLICATE`                                              | El mismo contenido ya está asociado al reporte.                                                                                                   |
 | `500`  | `EVIDENCE_STORAGE_FAILED`, `EVIDENCE_PERSISTENCE_FAILED`          | Fallo de Storage o de la base de datos, tras la compensación.                                                                                     |
@@ -575,6 +576,10 @@ Los códigos de archivo son los de `EVIDENCE_ERROR_CODES`; la interfaz los tradu
 - Si el paso 3 falla después de descargar, se borra el objeto (permiso de borrado del propietario sobre objetos no registrados).
 - Si también falla el borrado, se registra la ruta (sin datos personales) para limpiarla después.
 - Las subidas que nunca se confirman quedan en la carpeta del usuario sin fila asociada. El cliente las borra si el usuario cancela; una limpieza periódica de objetos sin fila con más de 24 h requiere un proceso con privilegios fuera de los handlers y queda pendiente.
+
+#### Moderación y credibilidad (pendiente)
+
+No hay endpoint de moderación de evidencias: la RLS ya permite a un administrador activo cambiar `moderation_status`, pero la aplicación no lo expone. Cuando exista, tras guardar el cambio debe llamar a `recalculateReportCredibility(reportId, { cause: 'evidence_moderated', triggerId: evidenceId })` dentro de un `try/catch` que no cambie su respuesta, igual que la confirmación. Como la credibilidad se calcula bajo demanda, una evidencia oculta deja de contar en la siguiente lectura aunque esa llamada falle.
 
 #### Metadatos EXIF/GPS (DoD, punto 4)
 
@@ -608,7 +613,7 @@ Las pruebas `profiles_backfill`, `reports_backfill` y `roles_backfill` reaplican
 
 **Requisito relacionado:** HU-09 — Consultar la credibilidad de un reporte.
 **Origen de esta definición:** HU-09, T1 — Diseñar un algoritmo de ponderación que distinga entre votos de usuarios según su nivel de confianza.
-**Estado:** diseño (T1), cálculo y acceso a datos implementados para HU-09/T2, estado en el listado con HU-01/T7 y explicación visible de factores implementada para HU-09/T3. Siguen pendientes las llamadas tras guardar una evidencia (HU-06/T5) o una valoración (HU-08/T4 y T7). Respeta el contrato acordado en la PR #13 (fila «Credibilidad (T5)» de las decisiones de HU-06/T4) y tiene en cuenta HU-10/T2–T3 (PR #28).
+**Estado:** diseño (T1), cálculo y acceso a datos implementados para HU-09/T2, estado en el listado con HU-01/T7 y explicación visible de factores implementada para HU-09/T3. La confirmación de evidencias ya recalcula tras guardar (HU-06/T5) y HU-08/T7 conecta las valoraciones confirmadas con el cálculo existente ([contrato de integración](api/assessments.md#integración-con-credibilidad--hu-08t7)); queda pendiente la llamada de moderación de evidencias, que aún no tiene endpoint. Respeta el contrato acordado en la PR #13 (fila «Credibilidad (T5)» de las decisiones de HU-06/T4) y tiene en cuenta HU-10/T2–T3 (PR #28).
 
 ### Criterios que debe cumplir
 
@@ -755,7 +760,7 @@ Mostrar el nivel con texto (no solo color), la indicación «Datos insuficientes
 2. `profiles` solo deja leer el perfil **propio** y activo; HU-10/T3 lo confirma (`getMyProfile`). Con el cliente del usuario no se puede leer el `trust_level` de otros valoradores.
 3. Los _handlers_ no usan `service_role` (decisión de la PR #13): trabajan como `authenticated` con el token Bearer o como `anon`.
 4. La credibilidad se muestra en la consulta pública de HU-01, que usa el cliente sin sesión (`anon`).
-5. `recalculateReportCredibility` se invoca desde la confirmación de evidencias (HU-06/T5) dentro de un `try/catch`: su fallo no puede cambiar el `201`.
+5. `recalculateReportCredibility` se invoca desde la confirmación de evidencias (HU-06/T5, implementado) dentro de un `try/catch`: su fallo no puede cambiar el `201`.
 
 #### Opción A — Cálculo bajo demanda sin persistir (recomendada)
 
@@ -868,7 +873,7 @@ Ninguna función inventa credibilidad: si no puede calcularla lanza `Credibility
 
 `getReportsCredibility` devuelve un `Map` por identificador en minúsculas y omite los reportes inexistentes o no visibles; no registra nada (decide quien llama). `recalculateReportCredibility` registra cualquier fallo con su `context` (causa y `triggerId`) antes de relanzarlo.
 
-#### Cómo invocarlo tras guardar (HU-06/T5, HU-08/T4)
+#### Cómo invocarlo tras guardar (HU-06/T5, HU-08/T7)
 
 Después de persistir y antes de responder, sin que un fallo cambie la respuesta:
 
@@ -885,7 +890,7 @@ try {
 }
 ```
 
-En la confirmación de evidencias encaja en `EvidenceServiceOptions.onEvidenceSaved` ([docs/api/evidences.md](api/evidences.md)). Como el cálculo no persiste nada, la llamada solo sirve hoy para registrar fallos y comprobar que el reporte es calculable; HU-09/T3 y HU-01/T7 obtienen el valor actual al leer. Esta tarea no conecta ningún _hook_ ni la interfaz.
+HU-06/T5 lo conecta directamente en `confirmEvidence` (`web/src/server/evidences.ts`), con el cliente de la petición y la dependencia inyectable `EvidenceServiceOptions.recalculateCredibility` ([docs/api/evidences.md](api/evidences.md), paso 6). También puede usarse el enganche opcional `EvidenceServiceOptions.onEvidenceSaved` después de recalcular. Como el cálculo no persiste nada, estas llamadas solo sirven hoy para registrar fallos y comprobar que el reporte es calculable; HU-09/T3 y HU-01/T7 obtienen el valor actual al leer. HU-08/T7 conecta las valoraciones con este servicio después de validar su recibo, usando el cliente autenticado en el tercer argumento `{ client }` y sin modificar la interfaz.
 
 #### Límites conocidos
 
@@ -901,7 +906,7 @@ Puntos que había que acordar con HU-08 y su estado tras HU-09/T2:
 3. ~~**Reportes propios.**~~ **Resuelto (D3):** el cálculo los ignora; HU-08/T4 deberá rechazarlos al registrar.
 4. ~~**Umbral de confianza y revocación.**~~ **Resuelto (D4):** la revocación no anula valoraciones emitidas; se excluyen los perfiles inactivos y se usa la confianza actual. El valor del umbral (`ASSESSMENTS_MIN_TRUST_LEVEL`) sigue siendo cosa de HU-08 y HU-10.
 5. **Abierto — Estados del reporte** que impidan valorar (HU-05). Para la credibilidad no hace falta nada más (D6).
-6. **Abierto — Invocación:** después de registrar una valoración, HU-08/T4 debe llamar a `recalculateReportCredibility(reportId, { cause: 'validation_added', triggerId: assessmentId })` dentro de un `try/catch` que no cambie la respuesta (véase «Cómo invocarlo tras guardar»).
+6. **Implementado — Invocación (HU-08/T7):** después de confirmar una validación o invalidación, se espera `recalculateReportCredibility(reportId, { cause: 'validation_added', triggerId: assessmentId }, { client })` dentro de un `try/catch`. Un fallo ya registrado por HU-09 no cambia el `201` ni el recibo, no elimina la valoración y no se registra de nuevo (véase «Cómo invocarlo tras guardar»).
 7. ~~**Lectura de la tabla cerrada.**~~ **Resuelto (D5):** `credibility_internal.report_inputs` lee `report_assessments` y devuelve solo agregados; las pruebas pgTAP comprueban que la tabla sigue cerrada y que no se exponen identidades.
 
-Fuera de HU-08 quedan la llamada con `evidence_added` (HU-06/T5), con `evidence_moderated` cuando exista la operación de moderación y la presentación en el listado (HU-01/T7).
+Fuera de HU-08: la llamada con `evidence_added` ya está conectada (HU-06/T5) y la presentación en el listado también (HU-01/T7); queda la llamada con `evidence_moderated` cuando exista la operación de moderación.

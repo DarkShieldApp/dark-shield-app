@@ -237,7 +237,6 @@ incluye el servidor y Storage de #23 (`159dad9`) y el cliente de subida de #25.
 | pgTAP                | `npm run test:db`: 782 aserciones correctas en 19 suites. Cubren las políticas del bucket, las RPC y la auditoría RBAC, y las reconstrucciones históricas de perfiles, reportes y roles.                                                                                                                      |
 | Lint y seguridad SQL | `db lint --schema public,private,authorization_internal --fail-on warning` y `db advisors --type security --fail-on error` devolvieron cero hallazgos en la instancia local.                                                                                                                                  |
 
-La aplicación de `evidences.add` a las rutas y políticas de HU-06 sigue pendiente.
 Estas pruebas corresponden al árbol local de integración.
 
 ### Dependencias de herramientas

@@ -19,6 +19,8 @@ export default defineConfig({
         'scripts/lib/**/*.ts',
         'src/app/api/admin/**/route.ts',
         'src/app/api/me/**/route.ts',
+        'src/app/api/reports/route.ts',
+        'src/app/api/reports/[[]reportId]/assessments/route.ts',
         'src/components/ReportSummaryCard.tsx',
       ],
       exclude: ['**/*.d.ts'],

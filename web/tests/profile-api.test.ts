@@ -115,6 +115,27 @@ describe('GET /api/me/profile', () => {
     expect((await response.json()).error.code).toBe('INTERNAL_ERROR');
   });
 
+  it.each([true, false])(
+    'preserves the HU-10 response for typed profile failures (authentication=%s)',
+    async (authenticationFailed) => {
+      const { ProfileQueryError } = await vi.importActual<
+        typeof import('../src/server/profile-query')
+      >('../src/server/profile-query');
+      vi.mocked(getMyProfile).mockRejectedValue(
+        new ProfileQueryError(authenticationFailed),
+      );
+      const response = await GET(createRequest('valid-token'));
+      expect(response.status).toBe(500);
+      expect(await response.json()).toEqual({
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'No se pudo recuperar el perfil.',
+        },
+      });
+      expect(response.headers.get('cache-control')).toBe('private, no-store');
+    },
+  );
+
   it('prevents caching of profile information', async () => {
     vi.mocked(getMyProfile).mockResolvedValue(exampleProfile);
 

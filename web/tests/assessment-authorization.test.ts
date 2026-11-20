@@ -112,7 +112,7 @@ it('denies trust below the minimum', async () => {
 });
 
 it.each(['collaborator', 'developer', 'admin'])(
-  'requires the collaborator role and its permission (%s)',
+  'checks the permission independently of role %s',
   async (role) => {
     maybeSingle.mockResolvedValue({
       data: profile({ role_code: role }),
@@ -122,8 +122,7 @@ it.each(['collaborator', 'developer', 'admin'])(
       data: { roleCode: role, permissions: ['assessments.submit'] },
       error: null,
     });
-    const authorization = await checkAssessmentAuthorization(bearer);
-    expect(authorization.allowed).toBe(role === 'collaborator');
+    expect((await checkAssessmentAuthorization(bearer)).allowed).toBe(true);
     rpc.mockResolvedValue({
       data: { roleCode: role, permissions: ['reports.create'] },
       error: null,
@@ -244,14 +243,35 @@ it.each([
   expect(rpc).not.toHaveBeenCalled();
 });
 
-it.each([0, 500, 503])('denies Auth service failure %i', async (status) => {
-  getUser.mockResolvedValue({ data: { user: null }, error: { status } });
-  expect(await checkAssessmentAuthorization(bearer)).toEqual({
-    allowed: false,
-    reason: 'SERVICE_UNAVAILABLE',
-  });
-  expect(from).not.toHaveBeenCalled();
-});
+it.each([0, 429, 500, 503])(
+  'denies Auth service failure %i',
+  async (status) => {
+    getUser.mockResolvedValue({ data: { user: null }, error: { status } });
+    expect(await checkAssessmentAuthorization(bearer)).toEqual({
+      allowed: false,
+      reason: 'SERVICE_UNAVAILABLE',
+    });
+    expect(from).not.toHaveBeenCalled();
+  },
+);
+
+it.each(['profile', 'permissions'])(
+  'identifies expired authentication during %s lookup',
+  async (stage) => {
+    const expired = {
+      status: 401,
+      error: { code: 'PGRST303', message: 'private JWT detail' },
+    };
+    if (stage === 'profile') maybeSingle.mockResolvedValue(expired);
+    else rpc.mockResolvedValue(expired);
+    expect(await checkAssessmentAuthorization(bearer)).toEqual({
+      allowed: false,
+      reason: 'INVALID_SESSION',
+    });
+    if (stage === 'profile') expect(rpc).not.toHaveBeenCalled();
+    else expect(rpc).toHaveBeenCalledExactlyOnceWith('my_permissions');
+  },
+);
 
 it.each(['auth', 'profile', 'permissions', 'configuration'])(
   'denies a thrown %s failure without leaking details',

@@ -28,7 +28,8 @@ comprobar al actor. Véase el [contrato de autorización](../../../docs/api/auth
 `evidences.ts` implementa la API de evidencias de HU-06/T4 (subida directa en dos
 pasos, confirmación y lectura) con el token Bearer del usuario y la RLS como
 autoridad. Si falla la confirmación, el servidor intenta retirar los objetos escritos como compensación. El módulo `evidence-images.ts` recodifica las imágenes con `sharp` para eliminar
-metadatos. Contrato en [docs/api/evidences.md](../../../docs/api/evidences.md).
+metadatos. Tras confirmar, recalcula la credibilidad del reporte (HU-06/T5) sin que un
+fallo cambie la respuesta. Contrato en [docs/api/evidences.md](../../../docs/api/evidences.md).
 
 `credibility.ts` calcula la credibilidad de los reportes (HU-09/T2) a partir de los
 agregados de la RPC `report_credibility_inputs`; no escribe nada y lanza
