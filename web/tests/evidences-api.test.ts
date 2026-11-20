@@ -10,6 +10,7 @@ import {
   EVIDENCE_BUCKET,
   EVIDENCE_SIGNED_URL_SECONDS,
   EvidenceApiError,
+  type EvidenceServiceOptions,
   confirmEvidence,
   extractBearerToken,
   listReportEvidences,
@@ -449,7 +450,7 @@ describe('paso 3: confirmar la evidencia', () => {
         createdAt: '2026-11-19T10:00:00.000Z',
       },
     });
-    // HU-06/T5: punto de enganche tras guardar, sin implementar el recálculo.
+    // Enganche genérico tras guardar (el recálculo de HU-06/T5 se prueba aparte).
     expect(onEvidenceSaved).toHaveBeenCalledWith(result.evidence);
   });
 
@@ -655,6 +656,11 @@ describe('paso 3: confirmar la evidencia', () => {
 });
 
 describe('paso 3: recálculo de la credibilidad (HU-06/T5)', () => {
+  type Recalculate = NonNullable<
+    EvidenceServiceOptions['recalculateCredibility']
+  >;
+  type OnSaved = NonNullable<EvidenceServiceOptions['onEvidenceSaved']>;
+
   const credibility = {
     score: 55,
     level: 'medium' as const,
@@ -680,9 +686,9 @@ describe('paso 3: recálculo de la credibilidad (HU-06/T5)', () => {
   /** Confirmación con el original subido y, si se indica, el recálculo inyectado. */
   const confirmWith = (
     config: FakeSupabaseConfig = {},
-    recalculateCredibility?: ReturnType<typeof vi.fn>,
+    recalculateCredibility?: Recalculate,
     value: unknown = confirmed,
-    extra: { onEvidenceSaved?: ReturnType<typeof vi.fn> } = {},
+    extra: { onEvidenceSaved?: OnSaved } = {},
   ) => {
     const context = setup({
       objects: new Map([
@@ -708,7 +714,7 @@ describe('paso 3: recálculo de la credibilidad (HU-06/T5)', () => {
 
   it('recalcula una vez, tras registrar la evidencia, con evidence_added y su id', async () => {
     const seen: { inserted: number; removed: string[][] }[] = [];
-    const recalculate = vi.fn();
+    const recalculate = vi.fn<Recalculate>();
     const { context, run } = confirmWith({}, recalculate);
     recalculate.mockImplementation(async () => {
       seen.push({
@@ -743,15 +749,17 @@ describe('paso 3: recálculo de la credibilidad (HU-06/T5)', () => {
   });
 
   it('si el recálculo falla, la evidencia sigue confirmada y la respuesta HTTP es la misma', async () => {
-    const respond = async (recalculate: ReturnType<typeof vi.fn>) => {
+    const respond = async (recalculate: Recalculate) => {
       const { context, run } = confirmWith({}, recalculate);
       const response = await runEvidenceOperation(201, run, vi.fn());
       return { context, response };
     };
 
-    const ok = await respond(vi.fn().mockResolvedValue(credibility));
+    const ok = await respond(
+      vi.fn<Recalculate>().mockResolvedValue(credibility),
+    );
     const failing = vi
-      .fn()
+      .fn<Recalculate>()
       .mockRejectedValue(new Error('detalle interno de la RPC (secreto)'));
     const failed = await respond(failing);
 
@@ -783,8 +791,10 @@ describe('paso 3: recálculo de la credibilidad (HU-06/T5)', () => {
   });
 
   it('el enganche onEvidenceSaved se sigue llamando aunque falle el recálculo', async () => {
-    const onEvidenceSaved = vi.fn().mockResolvedValue(undefined);
-    const recalculate = vi.fn().mockRejectedValue(new Error('caído'));
+    const onEvidenceSaved = vi.fn<OnSaved>().mockResolvedValue(undefined);
+    const recalculate = vi
+      .fn<Recalculate>()
+      .mockRejectedValue(new Error('caído'));
     const { run } = confirmWith({}, recalculate, confirmed, {
       onEvidenceSaved,
     });
@@ -834,7 +844,7 @@ describe('paso 3: recálculo de la credibilidad (HU-06/T5)', () => {
   ])(
     'no recalcula si la confirmación falla: %s',
     async (_case, config, value) => {
-      const recalculate = vi.fn().mockResolvedValue(credibility);
+      const recalculate = vi.fn<Recalculate>().mockResolvedValue(credibility);
       const { run } = confirmWith(
         config as FakeSupabaseConfig,
         recalculate,
@@ -847,7 +857,7 @@ describe('paso 3: recálculo de la credibilidad (HU-06/T5)', () => {
   );
 
   it('repetir la confirmación de la misma subida no recalcula dos veces', async () => {
-    const recalculate = vi.fn().mockResolvedValue(credibility);
+    const recalculate = vi.fn<Recalculate>().mockResolvedValue(credibility);
     const { context, run } = confirmWith({}, recalculate);
 
     await run();
