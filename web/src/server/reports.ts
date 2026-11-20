@@ -1,0 +1,617 @@
+﻿import 'server-only';
+
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { parse as parsePublicSuffix } from 'tldts';
+import {
+  validateReportForm,
+  type ReportCategory,
+  type ReportFormInput,
+  type ReportValidationErrors,
+} from '../lib/reports/validation';
+import {
+  QUERY_ERROR_CODES,
+  type ReportCredibilitySummary,
+  type ReportQueryResult,
+  type ReportQueryScope,
+  type ReportSummaryItem,
+} from '../lib/reports/query';
+import { getReportsCredibility, type CredibilityResult } from './credibility';
+import { createAuthenticatedSupabaseClient, verifyBearer } from './session';
+import { createServerSupabaseClient } from './supabase';
+
+export { createAuthenticatedSupabaseClient } from './session';
+
+export interface PersistedReport {
+  id: string;
+  author_id: string;
+  title: string;
+  description: string;
+  pattern_type: ReportCategory | null;
+  target_url: string;
+  page_key: string;
+  target_host: string;
+  registrable_domain: string;
+  created_at: string;
+}
+
+export interface NormalizedReportTarget {
+  targetUrl: string;
+  pageKey: string;
+  targetHost: string;
+  registrableDomain: string;
+}
+
+export class ReportApiError extends Error {
+  readonly status: number;
+  readonly code: string;
+  readonly details?: ReportValidationErrors;
+
+  constructor(
+    status: number,
+    code: string,
+    message: string,
+    details?: ReportValidationErrors,
+  ) {
+    super(message);
+    this.name = 'ReportApiError';
+    this.status = status;
+    this.code = code;
+    this.details = details;
+  }
+}
+
+const CONTROL_CHARS_REGEX = /[\u0000-\u001F\u007F]/;
+const MAX_TARGET_URL_LENGTH = 2048;
+
+// HU-01/T2: Public Suffix List mantenida (tldts), incluida la sección privada,
+// para que *.github.io o *.blogspot.com sean dominios registrables propios.
+// Recibe hosts ya normalizados por WHATWG URL, no URLs completas.
+const PUBLIC_SUFFIX_OPTIONS = {
+  allowPrivateDomains: true,
+  extractHostname: false,
+  mixedInputs: false,
+} as const;
+
+function normalizeHost(hostname: string): string {
+  // tldts no ignora el punto final del FQDN ("example.com." → "com.").
+  return hostname.toLowerCase().replace(/\.+$/, '');
+}
+
+function lookupPublicSuffix(hostname: string) {
+  return parsePublicSuffix(normalizeHost(hostname), PUBLIC_SUFFIX_OPTIONS);
+}
+
+/**
+ * Dominio registrable según la PSL. Cuando no existe (IP, `localhost` o un
+ * sufijo público), devuelve el host: la columna no admite nulos y esos hosts
+ * solo se consultan por página, porque el modo dominio los rechaza.
+ */
+export function extractRegistrableDomain(hostname: string): string {
+  return lookupPublicSuffix(hostname).domain ?? normalizeHost(hostname);
+}
+
+export function normalizeReportTarget(rawUrl: string): NormalizedReportTarget {
+  const parsed = new URL(rawUrl.trim());
+  const targetHost = parsed.hostname.toLowerCase();
+  const pageKey = `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
+  const registrableDomain = extractRegistrableDomain(targetHost);
+
+  return {
+    targetUrl: parsed.toString(),
+    pageKey,
+    targetHost,
+    registrableDomain,
+  };
+}
+
+function readStringField(
+  source: Record<string, unknown>,
+  primaryKey: string,
+  fallbackKey?: string,
+): string {
+  const rawValue =
+    source[primaryKey] !== undefined
+      ? source[primaryKey]
+      : fallbackKey
+        ? source[fallbackKey]
+        : undefined;
+
+  if (rawValue === undefined || rawValue === null) {
+    return '';
+  }
+
+  if (typeof rawValue !== 'string') {
+    throw new ReportApiError(
+      400,
+      'INVALID_FIELD_TYPE',
+      `El campo "${primaryKey}" debe ser una cadena de texto.`,
+    );
+  }
+
+  return rawValue;
+}
+
+export function parseAndValidateReportPayload(
+  rawBody: unknown,
+): ReportFormInput {
+  if (
+    typeof rawBody !== 'object' ||
+    rawBody === null ||
+    Array.isArray(rawBody)
+  ) {
+    throw new ReportApiError(
+      400,
+      'INVALID_PAYLOAD',
+      'El cuerpo de la petición debe ser un objeto JSON válido.',
+    );
+  }
+
+  const record = rawBody as Record<string, unknown>;
+  const input: ReportFormInput = {
+    targetUrl: readStringField(record, 'targetUrl', 'target_url').trim(),
+    category: readStringField(record, 'category', 'pattern_type').trim(),
+    title: readStringField(record, 'title').trim(),
+    description: readStringField(record, 'description').trim(),
+    stepsToReproduce: readStringField(
+      record,
+      'stepsToReproduce',
+      'steps_to_reproduce',
+    ).trim(),
+  };
+
+  const validation = validateReportForm(input);
+  if (!validation.valid) {
+    throw new ReportApiError(
+      400,
+      'VALIDATION_ERROR',
+      'Los datos del reporte contienen errores de validación.',
+      validation.errors,
+    );
+  }
+
+  if (CONTROL_CHARS_REGEX.test(input.title)) {
+    throw new ReportApiError(
+      400,
+      'VALIDATION_ERROR',
+      'El título no puede contener caracteres de control.',
+      { title: 'El título no puede contener caracteres de control.' },
+    );
+  }
+
+  const normalizedTarget = normalizeReportTarget(input.targetUrl);
+  if (normalizedTarget.targetUrl.length > MAX_TARGET_URL_LENGTH) {
+    throw new ReportApiError(
+      400,
+      'VALIDATION_ERROR',
+      `La URL no puede superar los ${MAX_TARGET_URL_LENGTH} caracteres.`,
+      {
+        targetUrl: `La URL no puede superar los ${MAX_TARGET_URL_LENGTH} caracteres.`,
+      },
+    );
+  }
+
+  return input;
+}
+
+export async function createReport(
+  rawBody: unknown,
+  accessToken: string | null,
+  injectedClient?: SupabaseClient,
+): Promise<PersistedReport> {
+  const input = parseAndValidateReportPayload(rawBody);
+
+  const token = accessToken?.trim();
+  if (!token) {
+    throw new ReportApiError(
+      401,
+      'UNAUTHENTICATED',
+      'Debes iniciar sesión como colaborador para registrar un reporte.',
+    );
+  }
+
+  const client = injectedClient ?? createAuthenticatedSupabaseClient(token);
+
+  const { userId } = await verifyBearer(client, token);
+  if (!userId) {
+    throw new ReportApiError(
+      401,
+      'INVALID_SESSION',
+      'La sesión no es válida o ha caducado.',
+    );
+  }
+
+  const { data: profile, error: profileError } = await client
+    .from('profiles')
+    .select('id, is_active')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (profileError) {
+    throw new ReportApiError(
+      500,
+      'PROFILE_LOOKUP_FAILED',
+      'No se pudo comprobar el estado del perfil del colaborador.',
+    );
+  }
+
+  if (!profile || !profile.is_active) {
+    throw new ReportApiError(
+      403,
+      'FORBIDDEN_INACTIVE_PROFILE',
+      'Tu cuenta de colaborador no está activa para crear reportes.',
+    );
+  }
+
+  const targetMeta = normalizeReportTarget(input.targetUrl);
+  const storedDescription = `${input.description}\n\nPasos para reproducir:\n${input.stepsToReproduce}`;
+
+  const { data: created, error: insertError } = await client
+    .from('reports')
+    .insert({
+      author_id: userId,
+      title: input.title,
+      description: storedDescription,
+      pattern_type: input.category,
+      target_url: targetMeta.targetUrl,
+      page_key: targetMeta.pageKey,
+      target_host: targetMeta.targetHost,
+      registrable_domain: targetMeta.registrableDomain,
+    })
+    .select(
+      'id, author_id, title, description, pattern_type, target_url, page_key, target_host, registrable_domain, created_at',
+    )
+    .single();
+
+  if (insertError || !created) {
+    throw new ReportApiError(
+      500,
+      'REPORT_PERSISTENCE_FAILED',
+      'No se pudo guardar el reporte en la base de datos.',
+    );
+  }
+
+  return created as PersistedReport;
+}
+
+export interface NormalizedReportQuery {
+  target: string;
+  scope: ReportQueryScope;
+  limit: number;
+  cursor: { createdAt: string; id: string } | null;
+  lookupKey: string;
+}
+
+export function encodeCursor(createdAt: string, id: string): string {
+  return Buffer.from(JSON.stringify({ createdAt, id })).toString('base64url');
+}
+
+// El cursor llega del cliente y sus valores se interpolan en el filtro `or`
+// de PostgREST: solo se aceptan un timestamptz ISO 8601 y un UUID.
+const CURSOR_TIMESTAMP_REGEX =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?(Z|[+-]\d{2}:\d{2})$/;
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function decodeCursor(cursor: string): {
+  createdAt: string;
+  id: string;
+} {
+  try {
+    const json = Buffer.from(cursor, 'base64url').toString('utf8');
+    const parsed = JSON.parse(json);
+    if (
+      typeof parsed === 'object' &&
+      parsed !== null &&
+      typeof parsed.createdAt === 'string' &&
+      typeof parsed.id === 'string' &&
+      CURSOR_TIMESTAMP_REGEX.test(parsed.createdAt) &&
+      !Number.isNaN(Date.parse(parsed.createdAt)) &&
+      UUID_REGEX.test(parsed.id)
+    ) {
+      return { createdAt: parsed.createdAt, id: parsed.id };
+    }
+  } catch {}
+  throw new ReportApiError(
+    400,
+    QUERY_ERROR_CODES.INVALID_CURSOR,
+    'El cursor de paginación no es válido.',
+  );
+}
+
+const URL_WITH_SCHEME_REGEX = /^[a-z][a-z0-9+.-]*:\/\//i;
+
+function invalidDomain(message: string): ReportApiError {
+  return new ReportApiError(
+    400,
+    QUERY_ERROR_CODES.INVALID_TARGET_DOMAIN,
+    message,
+  );
+}
+
+/**
+ * scope=domain: el host se obtiene con el parser WHATWG (minúsculas, IDN a
+ * punycode, sin puerto ni ruta), también cuando se envía un dominio sin
+ * esquema, y la clave es su dominio registrable según la PSL. Así coincide
+ * con `registrable_domain`, que `normalizeReportTarget` calcula al crear.
+ */
+function resolveDomainLookupKey(rawTarget: string): string {
+  const hasScheme = URL_WITH_SCHEME_REGEX.test(rawTarget);
+  let parsed: URL;
+  try {
+    parsed = new URL(hasScheme ? rawTarget : `http://${rawTarget}`);
+  } catch {
+    throw invalidDomain('El formato del dominio no es válido.');
+  }
+
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw invalidDomain(
+      'La URL para búsqueda por dominio debe usar http o https.',
+    );
+  }
+
+  if (parsed.username !== '' || parsed.password !== '') {
+    throw invalidDomain('El dominio no puede contener credenciales.');
+  }
+
+  const suffixInfo = lookupPublicSuffix(parsed.hostname);
+  if (suffixInfo.isIp) {
+    throw invalidDomain(
+      'Las direcciones IP solo se admiten en consultas con scope=page.',
+    );
+  }
+
+  if (!suffixInfo.domain) {
+    throw invalidDomain(
+      'El objetivo de búsqueda no puede ser únicamente un sufijo público.',
+    );
+  }
+
+  return suffixInfo.domain;
+}
+
+export function parseAndValidateQueryParams(
+  rawParams: Record<string, unknown> | URLSearchParams,
+): NormalizedReportQuery {
+  const getParam = (key: string): string => {
+    if (rawParams instanceof URLSearchParams) {
+      return rawParams.get(key) ?? '';
+    }
+    const val = rawParams[key];
+    if (typeof val === 'number') {
+      return String(val);
+    }
+    return typeof val === 'string' ? val : '';
+  };
+
+  const rawScope = getParam('scope').trim().toLowerCase();
+  if (rawScope !== 'page' && rawScope !== 'domain') {
+    throw new ReportApiError(
+      400,
+      QUERY_ERROR_CODES.INVALID_SCOPE,
+      'El parámetro "scope" es obligatorio y debe ser "page" o "domain".',
+    );
+  }
+  const scope: ReportQueryScope = rawScope;
+
+  const rawTarget = getParam('target').trim();
+  if (!rawTarget) {
+    throw new ReportApiError(
+      400,
+      QUERY_ERROR_CODES.MISSING_TARGET,
+      'El parámetro "target" es obligatorio.',
+    );
+  }
+
+  if (
+    rawTarget.length > MAX_TARGET_URL_LENGTH ||
+    CONTROL_CHARS_REGEX.test(rawTarget)
+  ) {
+    throw new ReportApiError(
+      400,
+      QUERY_ERROR_CODES.INVALID_TARGET,
+      'El parámetro "target" contiene caracteres de control o supera la longitud máxima permitida.',
+    );
+  }
+
+  let lookupKey: string;
+
+  if (scope === 'page') {
+    let parsed: URL;
+    try {
+      parsed = new URL(rawTarget);
+    } catch {
+      throw new ReportApiError(
+        400,
+        QUERY_ERROR_CODES.INVALID_TARGET_URL,
+        'Para scope=page, target debe ser una URL absoluta http o https válida.',
+      );
+    }
+
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new ReportApiError(
+        400,
+        QUERY_ERROR_CODES.INVALID_TARGET_URL,
+        'El protocolo de la URL debe ser http o https.',
+      );
+    }
+
+    if (parsed.username !== '' || parsed.password !== '') {
+      throw new ReportApiError(
+        400,
+        QUERY_ERROR_CODES.INVALID_TARGET_URL,
+        'La URL no puede contener credenciales de autenticación.',
+      );
+    }
+
+    if (!parsed.hostname) {
+      throw new ReportApiError(
+        400,
+        QUERY_ERROR_CODES.INVALID_TARGET_URL,
+        'La URL debe incluir un nombre de host válido.',
+      );
+    }
+
+    lookupKey = `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
+  } else {
+    lookupKey = resolveDomainLookupKey(rawTarget);
+  }
+
+  let limit = 20;
+  const rawLimit = getParam('limit').trim();
+  if (rawLimit) {
+    const parsedLimit = Number(rawLimit);
+    if (
+      !Number.isInteger(parsedLimit) ||
+      parsedLimit < 1 ||
+      parsedLimit > 100
+    ) {
+      throw new ReportApiError(
+        400,
+        QUERY_ERROR_CODES.INVALID_LIMIT,
+        'El parámetro "limit" debe ser un número entero entre 1 y 100.',
+      );
+    }
+    limit = parsedLimit;
+  }
+
+  let cursor: { createdAt: string; id: string } | null = null;
+  const rawCursor = getParam('cursor').trim();
+  if (rawCursor) {
+    cursor = decodeCursor(rawCursor);
+  }
+
+  return {
+    target: rawTarget,
+    scope,
+    limit,
+    cursor,
+    lookupKey,
+  };
+}
+
+export interface QueryReportsOptions {
+  /** Registro de fallos de la credibilidad; por defecto, `console.error`. */
+  logError?: (message: string, error: unknown) => void;
+}
+
+function toCredibilitySummary(
+  result: CredibilityResult,
+): ReportCredibilitySummary {
+  return {
+    level: result.level,
+    score: result.score,
+    sufficientData: result.sufficientData,
+    updatedAt: result.updatedAt,
+    factors: result.factors,
+  };
+}
+
+/**
+ * HU-01/T7: credibilidad de la página con una sola RPC y el mismo cliente sin
+ * sesión. Si falla, se registra y cada reporte queda con `null`: la consulta
+ * no se convierte en error ni en lista vacía y no se inventa ningún valor.
+ */
+async function attachCredibility(
+  items: ReportSummaryItem[],
+  client: SupabaseClient,
+  logError: NonNullable<QueryReportsOptions['logError']>,
+): Promise<ReportSummaryItem[]> {
+  let byId = new Map<string, CredibilityResult>();
+  try {
+    byId = await getReportsCredibility(
+      items.map(({ id }) => id),
+      { client },
+    );
+  } catch (error) {
+    logError(
+      'No se pudo obtener la credibilidad de los reportes consultados',
+      error,
+    );
+  }
+  return items.map((item) => {
+    const result = byId.get(item.id.toLowerCase());
+    return {
+      ...item,
+      credibility: result ? toCredibilitySummary(result) : null,
+    };
+  });
+}
+
+export async function queryReports(
+  rawParams: Record<string, unknown> | URLSearchParams,
+  injectedClient?: SupabaseClient,
+  options: QueryReportsOptions = {},
+): Promise<ReportQueryResult> {
+  const query = parseAndValidateQueryParams(rawParams);
+  const client = injectedClient ?? createServerSupabaseClient();
+
+  // `target_url` puede conservar la query de la URL reportada (tokens, IDs de
+  // sesión): no se lee y `anon` no tiene permiso sobre la columna. La URL
+  // pública es `page_key`, que ya excluye query y fragmento.
+  let dbQuery = client
+    .from('reports')
+    .select('id, title, description, pattern_type, page_key, created_at')
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(query.limit + 1);
+
+  if (query.scope === 'page') {
+    dbQuery = dbQuery.eq('page_key', query.lookupKey);
+  } else {
+    dbQuery = dbQuery.eq('registrable_domain', query.lookupKey);
+  }
+
+  if (query.cursor) {
+    dbQuery = dbQuery.or(
+      `created_at.lt.${query.cursor.createdAt},and(created_at.eq.${query.cursor.createdAt},id.lt.${query.cursor.id})`,
+    );
+  }
+
+  const { data, error } = await dbQuery;
+
+  if (error) {
+    throw new ReportApiError(
+      500,
+      QUERY_ERROR_CODES.QUERY_FAILED,
+      'Error al consultar los reportes en la base de datos.',
+    );
+  }
+
+  const rows = data ?? [];
+
+  // HU01-FL-03 — Diferenciar vacío de error:
+  // Una página sin reportes devuelve un listado vacío con 200 OK, no un error
+  if (rows.length === 0) {
+    return {
+      items: [],
+      nextCursor: null,
+    };
+  }
+
+  const hasMore = rows.length > query.limit;
+  const pageRows = hasMore ? rows.slice(0, query.limit) : rows;
+
+  const baseItems: ReportSummaryItem[] = pageRows.map((row) => ({
+    id: row.id,
+    title: row.title,
+    description: row.description,
+    pattern_type: row.pattern_type as string | null,
+    target_url: row.page_key,
+    page_key: row.page_key,
+    created_at: row.created_at,
+  }));
+  const items = await attachCredibility(
+    baseItems,
+    client,
+    options.logError ?? console.error,
+  );
+
+  const lastItem = pageRows[pageRows.length - 1];
+  const nextCursor =
+    hasMore && lastItem ? encodeCursor(lastItem.created_at, lastItem.id) : null;
+
+  return {
+    items,
+    nextCursor,
+  };
+}
