@@ -91,20 +91,26 @@ en la frontera de escritura frente a cambios concurrentes de cuenta, confianza o
 permisos. No debe reutilizar una decisión anterior o recibida del navegador.
 La tabla sigue cerrada; T2 por sí sola no habilita escrituras ni evita esas carreras.
 
+HU-08/T4 incorpora la [RPC transaccional y su política protegida](api/assessments.md).
+La API compara ese mínimo con el de T2 y la RPC exige su revisión vigente. El
+entorno no sustituye la política de PostgreSQL; ambas configuraciones deben
+activarse coordinadamente tras aprobar el mínimo. La invocación del cálculo de
+credibilidad tras guardar queda para HU-08/T7.
+
 ## Decisiones del PO
 
 Aprobado por el PO, 19/11/2026, con la implementación de HU-09/T2
 ([detalle](domain-design.md#implementación-hu-09t2)). No cambian el código de T2:
 son reglas para HU-08/T4 y para el cálculo de la credibilidad.
 
-| Decisión                       | Estado                                                                                                                                                                                                                                |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Repetición y cambio de opinión | **Aprobada (D1).** Cuenta solo la última valoración de cada valorador (`created_at` desc, `id` como desempate). Sin `UNIQUE` por ahora; T4 decide si guarda historial o impone unicidad.                                              |
-| Retirada                       | **Aprobada (D2).** No hay retirada de valoraciones en el Sprint 1.                                                                                                                                                                    |
-| Reportes propios               | **Aprobada (D3).** El cálculo ignora la valoración del autor; T4 deberá rechazarla al registrar.                                                                                                                                      |
-| Estado del reporte             | **Abierta.** Acordar con HU-05 los estados que bloquean participación. La credibilidad no filtra por estado: respeta la RLS de `reports` (D6).                                                                                        |
-| Confianza y revocación         | **Aprobada (D4).** Revocar el permiso o bajar la confianza no anula valoraciones emitidas; el cálculo excluye perfiles inactivos y usa la confianza actual. El valor del mínimo sigue pendiente con HU-10.                            |
-| Credibilidad                   | **Aprobada (D5).** `credibility_internal.report_inputs` lee `report_assessments` y devuelve solo agregados; la tabla sigue cerrada. Falta que T4 invoque `recalculateReportCredibility` tras persistir (`cause: 'validation_added'`). |
+| Decisión                       | Estado                                                                                                                                                                                                                                                   |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Repetición y cambio de opinión | **Aprobada (D1).** Cuenta solo la última valoración de cada valorador (`created_at` desc, `id` como desempate). Sin `UNIQUE` por ahora; T4 decide si guarda historial o impone unicidad.                                                                 |
+| Retirada                       | **Aprobada (D2).** No hay retirada de valoraciones en el Sprint 1.                                                                                                                                                                                       |
+| Reportes propios               | **Aprobada (D3).** El cálculo ignora la valoración del autor; T4 deberá rechazarla al registrar.                                                                                                                                                         |
+| Estado del reporte             | **Abierta.** Acordar con HU-05 los estados que bloquean participación. La credibilidad no filtra por estado: respeta la RLS de `reports` (D6).                                                                                                           |
+| Confianza y revocación         | **Aprobada (D4).** Revocar el permiso o bajar la confianza no anula valoraciones emitidas; el cálculo excluye perfiles inactivos y usa la confianza actual. El valor del mínimo sigue pendiente con HU-10.                                               |
+| Credibilidad                   | **Aprobada (D5).** `credibility_internal.report_inputs` lee `report_assessments` y devuelve solo agregados; la tabla sigue cerrada. La invocación de `recalculateReportCredibility` tras persistir (`cause: 'validation_added'`) corresponde a HU-08/T7. |
 
 ## HU-11 y pruebas
 
