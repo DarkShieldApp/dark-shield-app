@@ -4,13 +4,14 @@ type EmailAuthClient = {
   auth: {
     signInWithOtp(credentials: {
       email: string;
-      options: { emailRedirectTo: string };
+      options: { emailRedirectTo: string; shouldCreateUser: boolean };
     }): Promise<{ error: Error | null }>;
   };
 };
 
 export async function sendEmailSignInLink(
   email: string,
+  shouldCreateUser: boolean,
   client: EmailAuthClient = createBrowserSupabaseClient(),
 ): Promise<void> {
   const { error } = await client.auth.signInWithOtp({
@@ -20,6 +21,7 @@ export async function sendEmailSignInLink(
         '/login?emailConfirmed=1',
         window.location.origin,
       ).toString(),
+      shouldCreateUser,
     },
   });
 

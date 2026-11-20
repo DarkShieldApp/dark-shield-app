@@ -8,22 +8,30 @@ beforeEach(() => {
 });
 
 describe('enlace de acceso por correo', () => {
-  it('solicita un enlace que vuelve a la pantalla de login', async () => {
-    const signInWithOtp = vi.fn(async () => ({
-      data: { user: null, session: null },
-      error: null,
-    }));
-    const client = { auth: { signInWithOtp } };
+  it.each([true, false])(
+    'solicita un enlace de login/registro (shouldCreateUser=%s)',
+    async (shouldCreateUser) => {
+      const signInWithOtp = vi.fn(async () => ({
+        data: { user: null, session: null },
+        error: null,
+      }));
+      const client = { auth: { signInWithOtp } };
 
-    await sendEmailSignInLink('colaborador@example.com', client);
+      await sendEmailSignInLink(
+        'colaborador@example.com',
+        shouldCreateUser,
+        client,
+      );
 
-    expect(signInWithOtp).toHaveBeenCalledWith({
-      email: 'colaborador@example.com',
-      options: {
-        emailRedirectTo: `${origin}/login?emailConfirmed=1`,
-      },
-    });
-  });
+      expect(signInWithOtp).toHaveBeenCalledWith({
+        email: 'colaborador@example.com',
+        options: {
+          emailRedirectTo: `${origin}/login?emailConfirmed=1`,
+          shouldCreateUser,
+        },
+      });
+    },
+  );
 
   it('propaga errores del proveedor de autenticación', async () => {
     const authError = new Error('No se pudo enviar el correo');
@@ -34,7 +42,7 @@ describe('enlace de acceso por correo', () => {
     };
 
     await expect(
-      sendEmailSignInLink('colaborador@example.com', client),
+      sendEmailSignInLink('colaborador@example.com', false, client),
     ).rejects.toBe(authError);
   });
 });
