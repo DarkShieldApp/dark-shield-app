@@ -5,6 +5,7 @@ import { recalculateReportCredibility } from './credibility';
 import {
   createAuthenticatedSupabaseClient,
   extractBearerToken,
+  isPostgrestAuthenticationError,
 } from './session';
 
 const uuid = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
@@ -70,9 +71,17 @@ export async function submitAssessment(
     const token = extractBearerToken(authorization);
     if (!token) return failure('UNAUTHENTICATED');
     const client = createAuthenticatedSupabaseClient(token);
-    const { data: policy, error: policyError } =
-      await client.rpc('assessment_policy');
-    if (policyError) return failure('SERVICE_UNAVAILABLE');
+    const {
+      data: policy,
+      error: policyError,
+      status: policyStatus,
+    } = await client.rpc('assessment_policy');
+    if (policyError)
+      return failure(
+        isPostgrestAuthenticationError(policyError, policyStatus)
+          ? 'UNAUTHENTICATED'
+          : 'SERVICE_UNAVAILABLE',
+      );
     if (
       !isRecord(policy) ||
       !isUuid(policy.revision) ||

@@ -1,10 +1,11 @@
 import 'server-only';
 
 import type { EffectivePermissions } from './authorization';
-import { getMyProfile } from './profile-query';
+import { getMyProfile, ProfileQueryError } from './profile-query';
 import {
   createAuthenticatedSupabaseClient,
   extractBearerToken,
+  isPostgrestAuthenticationError,
   verifyBearer,
 } from './session';
 
@@ -53,7 +54,10 @@ export async function checkAssessmentAuthorization(
 
     const client = createAuthenticatedSupabaseClient(token);
     const { userId, error } = await verifyBearer(client, token);
-    if (error && (error.status === 0 || (error.status ?? 0) >= 500)) {
+    if (
+      error &&
+      (error.status === 0 || error.status === 429 || (error.status ?? 0) >= 500)
+    ) {
       return { allowed: false, reason: 'SERVICE_UNAVAILABLE' };
     }
     if (error || !userId) return { allowed: false, reason: 'INVALID_SESSION' };
@@ -65,9 +69,18 @@ export async function checkAssessmentAuthorization(
 
     // HU-14/T3's RPC derives the subject from auth.uid() and reads the live matrix.
     // Do not use the admin-only HTTP wrapper or infer capabilities from role_code.
-    const { data, error: permissionError } = await client.rpc('my_permissions');
+    const {
+      data,
+      error: permissionError,
+      status,
+    } = await client.rpc('my_permissions');
     if (permissionError) {
-      return { allowed: false, reason: 'SERVICE_UNAVAILABLE' };
+      return {
+        allowed: false,
+        reason: isPostgrestAuthenticationError(permissionError, status)
+          ? 'INVALID_SESSION'
+          : 'SERVICE_UNAVAILABLE',
+      };
     }
     const effective = data as Partial<EffectivePermissions> | null;
     if (
@@ -88,7 +101,10 @@ export async function checkAssessmentAuthorization(
       return { allowed: false, reason: 'INSUFFICIENT_TRUST' };
     }
     return { allowed: true, assessorId: userId, trustLevel, minimumTrustLevel };
-  } catch {
+  } catch (error) {
+    if (error instanceof ProfileQueryError && error.authenticationFailed) {
+      return { allowed: false, reason: 'INVALID_SESSION' };
+    }
     // Configuration, network and query failures never yield permission or leak details.
     return { allowed: false, reason: 'SERVICE_UNAVAILABLE' };
   }
