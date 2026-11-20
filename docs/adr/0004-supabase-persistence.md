@@ -1,7 +1,7 @@
 # ADR-004 — Persistencia con Supabase
 
 - **Fecha:** 9 de noviembre de 2026.
-- **Estado:** Supabase y Supabase Auth adoptados; SDK, CLI y perfil de usuario HU-14/T1 implementados el 10 de noviembre de 2026. T2 añade catálogo y rol principal el 11 de noviembre de 2026. T3 añade permisos efectivos y administración auditada. El repositorio también contiene reportes, valoraciones y evidencias. HU-11 mantiene pendiente el flujo de sesiones.
+- **Estado:** Supabase y Supabase Auth adoptados; SDK, CLI y perfil de usuario HU-14/T1 implementados el 10 de noviembre de 2026. T2 añade catálogo y rol principal el 11 de noviembre de 2026. T3 añade permisos efectivos y administración auditada. El repositorio también contiene reportes, valoraciones y evidencias. HU-11/T1–T2 incorpora cliente y acceso por enlace de correo; persistencia, renovación y autorización de rutas siguen pendientes.
 
 ## Contexto
 

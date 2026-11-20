@@ -31,10 +31,13 @@ api_url = "http://127.0.0.1"
 [auth]
 enabled = true
 site_url = "http://localhost:3000"
-additional_redirect_urls = []
-# HU-11 will configure and test the complete authentication flow.
-enable_signup = false
+additional_redirect_urls = ["http://localhost:3000/login?emailConfirmed=1"]
+enable_signup = true
 enable_anonymous_sign_ins = false
+
+[auth.email]
+enable_signup = true
+enable_confirmations = true
 
 [local_smtp]
 enabled = true

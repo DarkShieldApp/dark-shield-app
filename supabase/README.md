@@ -2,9 +2,9 @@
 
 Supabase/PostgreSQL y Supabase Auth son las tecnologías adoptadas. HU-14/T1
 incorpora `public.profiles`, su primera migración, triggers, RLS y pruebas reales.
-T2 añade `public.roles` y un rol principal obligatorio por perfil. T3 añade permisos base y administración auditada.
-Las factorías web siguen sin estado. Registro, login, logout, cookies y sesiones
-pertenecen a HU-11 y todavía no están implementados.
+T2 añade `public.roles` y un rol principal obligatorio por perfil. T3 añade permisos base y administración auditada. HU-11/T1–T2 añade el cliente
+web y acceso por enlace de correo con confirmación. La sesión persistente,
+renovación, cierre de sesión y autorización de rutas siguen pendientes de T3–T4.
 
 ## Proyecto remoto y diagnóstico
 
@@ -16,6 +16,12 @@ claves administrativas ni contraseñas remotas en código o Git.
 `/auth/v1/health`. Su resultado demuestra disponibilidad de Auth, no el modelo ni
 RLS. No crea usuarios ni sesiones y no se ejecuta en CI o build.
 
+Para el proyecto remoto, habilitar el registro por correo y la confirmación de
+correo en Authentication. Añadir la URL de la aplicación con la ruta
+`/login?emailConfirmed=1` a las URLs de redirección permitidas; la URL enviada
+en el enlace de acceso debe coincidir con una de ellas. No se necesitan credenciales
+de Google ni claves de servidor en el navegador.
+
 Las migraciones del dominio están versionadas para validación local. Esta tarea no
 las aplica al proyecto remoto compartido; su estado debe comprobarse antes del despliegue. El remoto utiliza PostgreSQL 17.
 
@@ -25,7 +31,8 @@ Supabase CLI 3.1.0 es una dependencia fijada en el lockfile. La configuración
 local usa PostgreSQL 17, API, Auth, Studio, correo local y Storage (HU-06/T4:
 _bucket_ privado `report-evidences`, creado por migración, y sus políticas de
 `storage.objects`, que prueba `report_evidences_storage.test.sql`). Realtime,
-Edge Functions y Analytics están desactivados, al igual que el registro público.
+Edge Functions y Analytics están desactivados. El registro por correo requiere
+confirmación; los enlaces de prueba se reciben en el servidor SMTP local.
 No hay archivos seed; T2 siembra los roles y T3 los seis permisos y sus doce asignaciones iniciales. La CLI v3 usa el entorno local por defecto; los comandos de esta
 sección no llevan `--remote` y no necesitan login ni enlazar el proyecto remoto.
 

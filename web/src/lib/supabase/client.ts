@@ -10,20 +10,7 @@ export function createBrowserSupabaseClient() {
     auth: {
       persistSession: false,
       autoRefreshToken: false,
-      detectSessionInUrl: false,
+      detectSessionInUrl: true,
     },
   });
-}
-
-export async function signInWithGoogle(): Promise<void> {
-  const { error } = await createBrowserSupabaseClient().auth.signInWithOAuth({
-    provider: 'google',
-    options: {
-      redirectTo: new URL('/', window.location.origin).toString(),
-    },
-  });
-
-  if (error) {
-    throw error;
-  }
 }

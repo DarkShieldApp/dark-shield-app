@@ -24,17 +24,17 @@ beforeEach(() => {
 });
 
 describe.each([
-  ['navegador', createBrowserSupabaseClient],
-  ['servidor', createServerSupabaseClient],
-] as const)('cliente de %s', (_name, factory) => {
-  it('crea un cliente real sin persistencia, renovación, sesión ni red', async () => {
+  ['navegador', createBrowserSupabaseClient, true],
+  ['servidor', createServerSupabaseClient, false],
+] as const)('cliente de %s', (_name, factory, detectSessionInUrl) => {
+  it('crea un cliente sin persistencia, con callback URL y sin red', async () => {
     const client = factory();
     expect(client).toBeInstanceOf(SupabaseClient);
     expect(createClient).toHaveBeenCalledWith(url, key, {
       auth: {
         persistSession: false,
         autoRefreshToken: false,
-        detectSessionInUrl: false,
+        detectSessionInUrl,
       },
     });
     expect(await client.auth.getSession()).toEqual({

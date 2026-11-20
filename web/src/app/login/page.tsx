@@ -1,25 +1,73 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
-import { signInWithGoogle } from '../../lib/supabase/client';
+import type { FormEvent } from 'react';
+import { useEffect, useState } from 'react';
+import { createBrowserSupabaseClient } from '../../lib/supabase/client';
+import { sendEmailSignInLink } from '../../lib/supabase/email-auth';
 
 export default function LoginPage() {
+  const [email, setEmail] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  async function handleGoogleSignIn() {
+  useEffect(() => {
+    const emailConfirmed =
+      new URLSearchParams(window.location.search).get('emailConfirmed') === '1';
+    const hasAuthCallback = window.location.hash.includes('access_token=');
+
+    if (!emailConfirmed && !hasAuthCallback) {
+      return;
+    }
+
+    async function readAuthCallback() {
+      try {
+        const { data, error } =
+          await createBrowserSupabaseClient().auth.getSession();
+        if (error) {
+          throw error;
+        }
+
+        if (emailConfirmed) {
+          setSuccessMessage(
+            data.session
+              ? 'Correo confirmado. Has iniciado sesión.'
+              : 'Correo confirmado. Ya puedes solicitar un enlace de acceso.',
+          );
+        } else if (data.session) {
+          setSuccessMessage('Has iniciado sesión correctamente.');
+        }
+      } catch (error) {
+        setErrorMessage(
+          error instanceof Error
+            ? error.message
+            : 'No se pudo completar la confirmación del correo.',
+        );
+      }
+    }
+
+    void readAuthCallback();
+  }, []);
+
+  async function handleEmailSignIn(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
     setIsLoading(true);
     setErrorMessage(null);
+    setSuccessMessage(null);
 
     try {
-      await signInWithGoogle();
+      await sendEmailSignInLink(email.trim());
+      setSuccessMessage(
+        'Te hemos enviado un enlace de acceso. Revisa tu correo para confirmar e iniciar sesión.',
+      );
     } catch (error) {
       setErrorMessage(
         error instanceof Error
           ? error.message
-          : 'No se pudo iniciar sesión con Google.',
+          : 'No se pudo enviar el enlace de acceso.',
       );
+    } finally {
       setIsLoading(false);
     }
   }
@@ -36,7 +84,7 @@ export default function LoginPage() {
         <span className="badge">Cuenta · HU-11</span>
         <h1 id="login-title">Iniciar sesión o registrarte</h1>
         <p className="subtitle">
-          Continúa con tu cuenta de Google para acceder a DarkShield.
+          Te enviaremos un enlace a tu correo para confirmar e iniciar sesión.
         </p>
 
         {errorMessage && (
@@ -45,17 +93,37 @@ export default function LoginPage() {
           </p>
         )}
 
-        <div className="actions-row">
+        {successMessage && (
+          <p className="success-notice" role="status">
+            {successMessage}
+          </p>
+        )}
+
+        <form onSubmit={handleEmailSignIn}>
+          <div className="form-group">
+            <label className="form-label" htmlFor="email">
+              Correo electrónico
+            </label>
+            <input
+              className="form-control"
+              id="email"
+              type="email"
+              autoComplete="email"
+              required
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              disabled={isLoading}
+            />
+          </div>
           <button
             className="btn-primary"
-            type="button"
-            onClick={handleGoogleSignIn}
+            type="submit"
             disabled={isLoading}
             aria-busy={isLoading}
           >
-            {isLoading ? 'Conectando con Google…' : 'Continuar con Google'}
+            {isLoading ? 'Enviando enlace…' : 'Enviar enlace de acceso'}
           </button>
-        </div>
+        </form>
       </section>
     </main>
   );

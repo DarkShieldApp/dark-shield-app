@@ -40,8 +40,9 @@ ni que corresponda al proyecto. Los errores identifican la variable sin mostrar
 su valor. No hay cliente privilegiado.
 
 `client-only` y `server-only` delimitan los módulos para Next.js. Las factorías
-usan `@supabase/supabase-js` con `persistSession`, `autoRefreshToken` y
-`detectSessionInUrl` desactivados. El cliente de servidor puede enviar el Bearer recibido y verificarlo con Auth. HU-11 incorporará las utilidades de `@supabase/ssr` para App Router y resolverá el
+usan `@supabase/supabase-js` sin persistencia ni renovación automáticas. El cliente
+de navegador detecta la sesión devuelta por el enlace de acceso de correo; HU-11/T3
+incorporará persistencia y renovación. El cliente de servidor puede enviar el Bearer recibido y verificarlo con Auth. HU-11 incorporará las utilidades de `@supabase/ssr` para App Router y resolverá el
 flujo completo de cookies, validación y renovación. El
 [cliente SSR de Supabase](https://github.com/supabase/ssr/blob/main/src/createBrowserClient.ts)
 persiste sesiones mediante cookies; por eso no se instala anticipadamente.
