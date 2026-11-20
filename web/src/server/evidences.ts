@@ -13,6 +13,7 @@ import {
   type EvidenceKind,
 } from '../lib/evidences/rules';
 import { SupabaseConfigurationError } from '../lib/supabase/config';
+import { recalculateReportCredibility } from './credibility';
 import { reencodeEvidenceImage } from './evidence-images';
 import {
   createAuthenticatedSupabaseClient,
@@ -77,9 +78,13 @@ export interface EvidenceServiceOptions {
   now?: () => Date;
   logError?: (message: string, error: unknown) => void;
   /**
-   * Se llama tras guardar la evidencia; un fallo se registra y no cambia la
-   * respuesta. HU-06/T5 lo usará para recalcular la credibilidad del reporte
-   * (HU-09/T2) cuando esté disponible.
+   * Recálculo de la credibilidad tras guardar (HU-06/T5); por defecto,
+   * `recalculateReportCredibility` (HU-09/T2) con el cliente de la petición.
+   */
+  recalculateCredibility?: typeof recalculateReportCredibility;
+  /**
+   * Se llama tras guardar la evidencia y recalcular la credibilidad; un fallo
+   * se registra y no cambia la respuesta.
    */
   onEvidenceSaved?: (evidence: EvidenceResource) => Promise<void>;
 }
@@ -483,7 +488,19 @@ export async function confirmEvidence(
   await removeObjects(client, [rawPath], logError);
   const evidence = toResource(row);
 
-  // HU-06/T5: aquí se recalculará la credibilidad del reporte.
+  // HU-06/T5: recalcula la credibilidad del reporte. Solo se llega aquí si la
+  // evidencia quedó registrada; un fallo ya lo registra la propia función con
+  // su causa y no cambia el 201 ni compensa la evidencia.
+  try {
+    await (options.recalculateCredibility ?? recalculateReportCredibility)(
+      evidence.reportId,
+      { cause: 'evidence_added', triggerId: evidence.id },
+      { client, logError },
+    );
+  } catch {
+    // Ya registrado; la respuesta no cambia.
+  }
+
   if (options.onEvidenceSaved) {
     try {
       await options.onEvidenceSaved(evidence);

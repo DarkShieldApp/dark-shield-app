@@ -544,7 +544,7 @@ Migración del endpoint: `insert into storage.buckets` de `report-evidences` con
    - Descarga el objeto y valida con `validateEvidenceFile` usando su tamaño real y sus primeros bytes. Si no es válido, borra el objeto y responde `400 EVIDENCE_REJECTED`.
    - Recodifica la imagen con `sharp`, valida la copia limpia y la guarda bajo un nuevo `evidenceId`. Calcula el `sha256` de esa copia e inserta la fila con `id = evidenceId`. Tras registrar la evidencia, retira el original. Si la inserción falla, intenta borrar ambos objetos: el _trigger_ del límite da `400 EVIDENCE_REJECTED` (`EVIDENCE_TOO_MANY`), el contenido repetido da `409 EVIDENCE_DUPLICATE` y cualquier otro fallo, `500 EVIDENCE_PERSISTENCE_FAILED`.
    - Responde `201` con `{ "evidence": { "id", "reportId", "originalName", "mimeType", "sizeBytes", "moderationStatus", "createdAt" } }`.
-   - **Punto de enganche de la T5:** después de la inserción y antes de responder, en un `try/catch` que registre el error sin cambiar el `201`. La T5 no se implementa hasta que HU-09/T2 esté en `main`.
+   - **Recálculo de la credibilidad (HU-06/T5, implementado):** después de la inserción y de retirar el original, y antes de responder, llama una vez a `recalculateReportCredibility(reportId, { cause: 'evidence_added', triggerId: evidenceId }, { client, logError })` con el cliente de la petición, dentro de un `try/catch`: un fallo queda registrado por la propia función y la respuesta sigue siendo el mismo `201`, sin detalles del error y sin compensar la evidencia. Si la confirmación falla o se rechaza no se recalcula, y una confirmación repetida (`400 EVIDENCE_UPLOAD_MISSING`, porque el original ya se retiró) tampoco. El servicio se inyecta como el resto de dependencias (`EvidenceServiceOptions.recalculateCredibility`). Después se ejecuta el enganche opcional `onEvidenceSaved`.
 
 #### `GET /api/reports/{reportId}/evidences`
 
@@ -574,6 +574,10 @@ Los códigos de archivo son los de `EVIDENCE_ERROR_CODES`; la interfaz los tradu
 - Si el paso 3 falla después de descargar, se borra el objeto (permiso de borrado del propietario sobre objetos no registrados).
 - Si también falla el borrado, se registra la ruta (sin datos personales) para limpiarla después.
 - Las subidas que nunca se confirman quedan en la carpeta del usuario sin fila asociada. El cliente las borra si el usuario cancela; una limpieza periódica de objetos sin fila con más de 24 h requiere un proceso con privilegios fuera de los handlers y queda pendiente.
+
+#### Moderación y credibilidad (pendiente)
+
+No hay endpoint de moderación de evidencias: la RLS ya permite a un administrador activo cambiar `moderation_status`, pero la aplicación no lo expone. Cuando exista, tras guardar el cambio debe llamar a `recalculateReportCredibility(reportId, { cause: 'evidence_moderated', triggerId: evidenceId })` dentro de un `try/catch` que no cambie su respuesta, igual que la confirmación. Como la credibilidad se calcula bajo demanda, una evidencia oculta deja de contar en la siguiente lectura aunque esa llamada falle.
 
 #### Metadatos EXIF/GPS (DoD, punto 4)
 
@@ -607,7 +611,7 @@ Las pruebas `profiles_backfill`, `reports_backfill` y `roles_backfill` reaplican
 
 **Requisito relacionado:** HU-09 — Consultar la credibilidad de un reporte.
 **Origen de esta definición:** HU-09, T1 — Diseñar un algoritmo de ponderación que distinga entre votos de usuarios según su nivel de confianza.
-**Estado:** diseño (T1), cálculo y acceso a datos implementados para HU-09/T2, estado en el listado con HU-01/T7 y explicación visible de factores implementada para HU-09/T3. HU-08/T7 conecta las valoraciones confirmadas con el cálculo existente ([contrato de integración](api/assessments.md#integración-con-credibilidad--hu-08t7)); queda pendiente la llamada tras guardar una evidencia (HU-06/T5). Respeta el contrato acordado en la PR #13 (fila «Credibilidad (T5)» de las decisiones de HU-06/T4) y tiene en cuenta HU-10/T2–T3 (PR #28).
+**Estado:** diseño (T1), cálculo y acceso a datos implementados para HU-09/T2, estado en el listado con HU-01/T7 y explicación visible de factores implementada para HU-09/T3. La confirmación de evidencias ya recalcula tras guardar (HU-06/T5) y HU-08/T7 conecta las valoraciones confirmadas con el cálculo existente ([contrato de integración](api/assessments.md#integración-con-credibilidad--hu-08t7)); queda pendiente la llamada de moderación de evidencias, que aún no tiene endpoint. Respeta el contrato acordado en la PR #13 (fila «Credibilidad (T5)» de las decisiones de HU-06/T4) y tiene en cuenta HU-10/T2–T3 (PR #28).
 
 ### Criterios que debe cumplir
 
@@ -754,7 +758,7 @@ Mostrar el nivel con texto (no solo color), la indicación «Datos insuficientes
 2. `profiles` solo deja leer el perfil **propio** y activo; HU-10/T3 lo confirma (`getMyProfile`). Con el cliente del usuario no se puede leer el `trust_level` de otros valoradores.
 3. Los _handlers_ no usan `service_role` (decisión de la PR #13): trabajan como `authenticated` con el token Bearer o como `anon`.
 4. La credibilidad se muestra en la consulta pública de HU-01, que usa el cliente sin sesión (`anon`).
-5. `recalculateReportCredibility` se invoca desde la confirmación de evidencias (HU-06/T5) dentro de un `try/catch`: su fallo no puede cambiar el `201`.
+5. `recalculateReportCredibility` se invoca desde la confirmación de evidencias (HU-06/T5, implementado) dentro de un `try/catch`: su fallo no puede cambiar el `201`.
 
 #### Opción A — Cálculo bajo demanda sin persistir (recomendada)
 
@@ -884,7 +888,7 @@ try {
 }
 ```
 
-En la confirmación de evidencias encaja en `EvidenceServiceOptions.onEvidenceSaved` ([docs/api/evidences.md](api/evidences.md)). Como el cálculo no persiste nada, la llamada solo sirve hoy para registrar fallos y comprobar que el reporte es calculable; HU-09/T3 y HU-01/T7 obtienen el valor actual al leer. HU-08/T7 conecta las valoraciones con este servicio después de validar su recibo, usando el cliente autenticado en el tercer argumento `{ client }`; no conecta evidencias ni modifica la interfaz.
+HU-06/T5 lo conecta directamente en `confirmEvidence` (`web/src/server/evidences.ts`), con el cliente de la petición y la dependencia inyectable `EvidenceServiceOptions.recalculateCredibility` ([docs/api/evidences.md](api/evidences.md), paso 6). También puede usarse el enganche opcional `EvidenceServiceOptions.onEvidenceSaved` después de recalcular. Como el cálculo no persiste nada, estas llamadas solo sirven hoy para registrar fallos y comprobar que el reporte es calculable; HU-09/T3 y HU-01/T7 obtienen el valor actual al leer. HU-08/T7 conecta las valoraciones con este servicio después de validar su recibo, usando el cliente autenticado en el tercer argumento `{ client }` y sin modificar la interfaz.
 
 #### Límites conocidos
 
@@ -903,4 +907,4 @@ Puntos que había que acordar con HU-08 y su estado tras HU-09/T2:
 6. **Implementado — Invocación (HU-08/T7):** después de confirmar una validación o invalidación, se espera `recalculateReportCredibility(reportId, { cause: 'validation_added', triggerId: assessmentId }, { client })` dentro de un `try/catch`. Un fallo ya registrado por HU-09 no cambia el `201` ni el recibo, no elimina la valoración y no se registra de nuevo (véase «Cómo invocarlo tras guardar»).
 7. ~~**Lectura de la tabla cerrada.**~~ **Resuelto (D5):** `credibility_internal.report_inputs` lee `report_assessments` y devuelve solo agregados; las pruebas pgTAP comprueban que la tabla sigue cerrada y que no se exponen identidades.
 
-Fuera de HU-08 quedan la llamada con `evidence_added` (HU-06/T5), con `evidence_moderated` cuando exista la operación de moderación y la presentación en el listado (HU-01/T7).
+Fuera de HU-08: la llamada con `evidence_added` ya está conectada (HU-06/T5) y la presentación en el listado también (HU-01/T7); queda la llamada con `evidence_moderated` cuando exista la operación de moderación.

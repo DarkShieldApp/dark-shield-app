@@ -74,26 +74,9 @@ Una evidencia por petición. El servidor:
 3. **Recodifica la imagen con `sharp`** en el mismo formato: elimina EXIF, GPS, XMP, IPTC y comentarios, aplica la orientación y limita la decodificación a 40 megapíxeles. Vuelve a validar el resultado.
 4. Guarda la copia limpia como `{user_id}/{reportId}/{evidenceId}.{ext}`, registra la fila (con su `sha256`) y borra el original.
 5. Si algo falla, borra lo que haya guardado (compensación) y responde con el error.
-6. Tras guardar, deja el punto de enganche de HU-06/T5 para recalcular la credibilidad; un fallo ahí se registra y no cambia el `201`. La función ya existe (HU-09/T2), pero el enganche no está conectado: corresponde a HU-06/T5. Debe hacerse así:
+6. **Recalcula la credibilidad del reporte (HU-06/T5).** Solo si la evidencia quedó registrada, llama una vez a `recalculateReportCredibility(reportId, { cause: 'evidence_added', triggerId: evidence.id }, { client, logError })` (HU-09/T2) con el mismo cliente de la petición. Un fallo del cálculo lo registra la propia función con su causa y el id de la evidencia; la confirmación lo ignora: la respuesta sigue siendo el mismo `201` con el mismo cuerpo, sin detalles del error, y la evidencia no se compensa. Si la confirmación falla o se rechaza (400, 403, 404, 409 o 500) no se recalcula; repetir la confirmación de una subida ya confirmada da `400 EVIDENCE_UPLOAD_MISSING` y tampoco recalcula. Como la credibilidad se calcula bajo demanda (no se guarda), la llamada no cambia lo que devuelven los listados: deja registrado si el reporte deja de ser calculable tras la nueva evidencia. Después se ejecuta el enganche opcional `onEvidenceSaved`, con el mismo tratamiento de errores.
 
-   ```ts
-   import { recalculateReportCredibility } from '@/server/credibility';
-
-   const options: EvidenceServiceOptions = {
-     onEvidenceSaved: async (evidence) => {
-       try {
-         await recalculateReportCredibility(evidence.reportId, {
-           cause: 'evidence_added',
-           triggerId: evidence.id,
-         });
-       } catch {
-         // Ya registrado; el 201 no cambia.
-       }
-     },
-   };
-   ```
-
-   `onEvidenceSaved` ya se ejecuta dentro de un `try/catch`; el propio deja explícito que el fallo no se propaga. Errores y detalles en [la sección de HU-09](../domain-design.md#implementación-hu-09t2).
+   La dependencia se inyecta como el resto (`EvidenceServiceOptions.recalculateCredibility`); por defecto es `recalculateReportCredibility`. Errores y detalles en [la sección de HU-09](../domain-design.md#implementación-hu-09t2).
 
 Respuesta `201 Created`:
 
@@ -174,6 +157,5 @@ Ejemplo (`400 Bad Request`, _magic bytes_ falsos):
 ## 7. Pendiente
 
 - Limpieza periódica de subidas nunca confirmadas (objetos sin fila con más de 24 h): requiere un proceso con privilegios fuera de los handlers.
-- Conectar el recálculo de credibilidad (HU-06/T5): `recalculateReportCredibility` ya está disponible (HU-09/T2); véase el paso 6.
-- Moderación por administradores desde la aplicación: la RLS ya la permite, pero no hay endpoint.
+- Moderación por administradores desde la aplicación: la RLS ya la permite, pero no hay endpoint. Cuando exista, tras cambiar `moderation_status` debe llamar a `recalculateReportCredibility(reportId, { cause: 'evidence_moderated', triggerId: evidenceId })` dentro de un `try/catch` que no cambie su respuesta, igual que el paso 6.
 - `POST /api/reports` usa todavía `INVALID_SESSION` para el token inválido; conviene alinearlo con el `401` único de esta API.
