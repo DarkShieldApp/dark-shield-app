@@ -28,6 +28,10 @@ const REPORT = 'c1111111-1111-4111-8111-111111111111';
 const UPLOAD = 'd1111111-1111-4111-8111-111111111111';
 const EVIDENCE = 'e1111111-1111-4111-8111-111111111111';
 const TOKEN = 'token-valido';
+const CONTRIBUTOR_PERMISSIONS = {
+  roleCode: 'contributor',
+  permissions: ['reports.create', 'evidences.add', 'assessments.submit'],
+};
 const UNAUTHENTICATED = {
   error: { code: 'UNAUTHENTICATED', message: 'Sesión no válida o caducada.' },
 };
@@ -53,6 +57,7 @@ function setup(config: FakeSupabaseConfig = {}) {
   const fake = createFakeSupabase({
     user: { id: USER },
     profile: { id: USER, is_active: true },
+    permissions: CONTRIBUTOR_PERMISSIONS,
     report: { id: REPORT },
     ...config,
   });
@@ -216,6 +221,217 @@ describe('autenticación y acceso (401, 403, 404)', () => {
       ).toMatchObject({ status: 500, code });
     },
   );
+});
+
+describe('permiso evidences.add (HU-06/CA1)', () => {
+  type Recalculate = NonNullable<
+    EvidenceServiceOptions['recalculateCredibility']
+  >;
+
+  const FORBIDDEN = {
+    error: {
+      code: 'FORBIDDEN_MISSING_PERMISSION',
+      message: 'No tienes permiso para aportar evidencias.',
+    },
+  };
+  const withoutEvidences = {
+    permissions: { roleCode: 'reader', permissions: ['reports.create'] },
+  };
+
+  /** Ejecuta los dos POST con un archivo válido y el original ya subido. */
+  const postBoth = (config: FakeSupabaseConfig) => {
+    const uploads = setup(config);
+    const confirm = setup({
+      objects: new Map([
+        [rawPath, new Blob([pngWithGps], { type: 'image/png' })],
+      ]),
+      ...config,
+    });
+    confirm.options.newId = () => EVIDENCE;
+    const recalculate = vi.fn<Recalculate>();
+    return {
+      uploads,
+      confirm,
+      recalculate,
+      requestUploads: () =>
+        requestEvidenceUploads(
+          {
+            reportId: REPORT,
+            accessToken: TOKEN,
+            readBody: body({
+              files: [{ name: 'captura.png', type: 'image/png', size: 10 }],
+            }),
+          },
+          uploads.options,
+        ),
+      confirmUpload: () =>
+        confirmEvidence(
+          {
+            reportId: REPORT,
+            accessToken: TOKEN,
+            readBody: body({ uploadId: UPLOAD, originalName: 'captura.png' }),
+          },
+          { ...confirm.options, recalculateCredibility: recalculate },
+        ),
+    };
+  };
+
+  /** Comprueba que ninguno de los dos POST llegó a tocar Storage ni la tabla. */
+  const expectNothingDone = ({
+    uploads,
+    confirm,
+    recalculate,
+  }: ReturnType<typeof postBoth>) => {
+    for (const { calls } of [uploads, confirm]) {
+      expect(calls.signedUploads).toEqual([]);
+      expect(calls.downloads).toEqual([]);
+      expect(calls.uploads).toEqual([]);
+      expect(calls.inserted).toEqual([]);
+      expect(calls.removed).toEqual([]);
+      expect(calls.filters.map(({ table }) => table)).not.toContain('reports');
+      expect(calls.filters.map(({ table }) => table)).not.toContain(
+        'report_evidences',
+      );
+    }
+    expect(recalculate).not.toHaveBeenCalled();
+  };
+
+  it('sin evidences.add responde 403 FORBIDDEN_MISSING_PERMISSION en los dos POST', async () => {
+    const run = postBoth(withoutEvidences);
+
+    for (const operation of [run.requestUploads, run.confirmUpload]) {
+      expect(await runEvidenceOperation(201, operation, vi.fn())).toEqual({
+        status: 403,
+        body: FORBIDDEN,
+      });
+    }
+    expectNothingDone(run);
+  });
+
+  it.each([
+    ['sin datos', null],
+    ['sin "permissions"', { roleCode: 'contributor' }],
+    ['"permissions" no es una lista', { permissions: 'evidences.add' }],
+    [
+      'lista con valores que no son texto',
+      { permissions: ['evidences.add', 1] },
+    ],
+    ['respuesta con forma de lista', ['evidences.add']],
+  ])(
+    'responde 403 si permissions está mal formado: %s',
+    async (_case, data) => {
+      const run = postBoth({ permissions: data });
+
+      for (const operation of [run.requestUploads, run.confirmUpload]) {
+        expect(await errorOf(operation())).toMatchObject({
+          status: 403,
+          code: 'FORBIDDEN_MISSING_PERMISSION',
+        });
+      }
+      expectNothingDone(run);
+    },
+  );
+
+  it('no deduce el permiso del rol: un rol con permisos vacíos no puede aportar', async () => {
+    const run = postBoth({
+      permissions: { roleCode: 'admin', permissions: [] },
+    });
+    for (const operation of [run.requestUploads, run.confirmUpload]) {
+      expect(await errorOf(operation())).toMatchObject({
+        status: 403,
+        code: 'FORBIDDEN_MISSING_PERMISSION',
+      });
+    }
+  });
+
+  it('responde 500 PERMISSION_LOOKUP_FAILED, sin detalles, si falla la RPC', async () => {
+    const run = postBoth({
+      permissionsError: {
+        message: 'permission denied for function',
+        code: '42501',
+      },
+    });
+
+    for (const operation of [run.requestUploads, run.confirmUpload]) {
+      const response = await runEvidenceOperation(201, operation, vi.fn());
+      expect(response).toEqual({
+        status: 500,
+        body: {
+          error: {
+            code: 'PERMISSION_LOOKUP_FAILED',
+            message: 'No se pudieron comprobar los permisos.',
+          },
+        },
+      });
+      expect(JSON.stringify(response.body)).not.toContain('42501');
+    }
+    expectNothingDone(run);
+  });
+
+  it('respeta el orden 401 → 403 perfil inactivo → 403 sin permiso → 404', async () => {
+    const inactive = postBoth({
+      ...withoutEvidences,
+      profile: { id: USER, is_active: false },
+    });
+    for (const operation of [inactive.requestUploads, inactive.confirmUpload]) {
+      expect(await errorOf(operation())).toMatchObject({
+        status: 403,
+        code: 'FORBIDDEN_INACTIVE_PROFILE',
+      });
+    }
+    expect(inactive.uploads.calls.rpc).toEqual([]);
+    expect(inactive.confirm.calls.rpc).toEqual([]);
+
+    const hidden = postBoth({ ...withoutEvidences, report: null });
+    for (const operation of [hidden.requestUploads, hidden.confirmUpload]) {
+      expect(await errorOf(operation())).toMatchObject({
+        status: 403,
+        code: 'FORBIDDEN_MISSING_PERMISSION',
+      });
+    }
+  });
+
+  it('con el permiso consulta my_permissions con el cliente de la petición y sigue', async () => {
+    const run = postBoth({});
+    run.recalculate.mockResolvedValue({
+      score: 55,
+      level: 'medium',
+      updatedAt: '2026-11-19T10:00:00.000Z',
+      sufficientData: false,
+    });
+
+    await expect(run.requestUploads()).resolves.toMatchObject({
+      uploads: [{ uploadId: UPLOAD }],
+    });
+    await expect(run.confirmUpload()).resolves.toMatchObject({
+      evidence: { id: EVIDENCE },
+    });
+
+    expect(run.uploads.calls.rpc).toEqual([
+      { name: 'my_permissions', args: undefined },
+    ]);
+    expect(run.confirm.calls.rpc).toEqual([
+      { name: 'my_permissions', args: undefined },
+    ]);
+    expect(run.uploads.calls.signedUploads).toHaveLength(1);
+    expect(run.confirm.calls.inserted).toHaveLength(1);
+    expect(run.recalculate).toHaveBeenCalledOnce();
+  });
+
+  it('GET /evidences no consulta el permiso de aportar', async () => {
+    const { options, calls } = setup(withoutEvidences);
+    await expect(
+      listReportEvidences(
+        {
+          reportId: REPORT,
+          accessToken: TOKEN,
+          searchParams: new URLSearchParams(),
+        },
+        options,
+      ),
+    ).resolves.toEqual({ items: [], nextCursor: null });
+    expect(calls.rpc).toEqual([]);
+  });
 });
 
 describe('paso 1: pedir las URL de subida', () => {
@@ -743,6 +959,7 @@ describe('paso 3: recálculo de la credibilidad (HU-06/T5)', () => {
     await expect(run()).resolves.toMatchObject({ evidence: { id: EVIDENCE } });
 
     expect(context.calls.rpc).toEqual([
+      { name: 'my_permissions', args: undefined },
       { name: 'report_credibility_inputs', args: { report_ids: [REPORT] } },
     ]);
     expect(context.options.logError).not.toHaveBeenCalled();

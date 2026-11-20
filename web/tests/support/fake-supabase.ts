@@ -31,10 +31,13 @@ export interface FakeSupabaseConfig {
   uploadError?: boolean;
   removeError?: boolean;
   signedUrlsError?: boolean;
-  /** Datos que devuelve `rpc` (HU-09/T2). */
+  /** Datos que devuelve `rpc('my_permissions')` (HU-14/T3). */
+  permissions?: unknown;
+  permissionsError?: FakeError;
+  /** Datos que devuelve `rpc('report_credibility_inputs')` (HU-09/T2). */
   rpcData?: unknown;
   rpcError?: FakeError;
-  /** Si se define, `rpc` rechaza la promesa con este valor. */
+  /** Si se define, `rpc('report_credibility_inputs')` rechaza la promesa. */
   rpcThrows?: unknown;
 }
 
@@ -263,6 +266,14 @@ export function createFakeSupabase(config: FakeSupabaseConfig = {}) {
     },
     async rpc(name: string, args?: Record<string, unknown>) {
       calls.rpc.push({ name, args });
+      if (name === 'my_permissions') {
+        return config.permissionsError
+          ? { data: null, error: config.permissionsError, status: 500 }
+          : { data: config.permissions ?? null, error: null, status: 200 };
+      }
+      if (name !== 'report_credibility_inputs') {
+        throw new Error(`RPC no prevista: ${name}`);
+      }
       if (config.rpcThrows !== undefined) throw config.rpcThrows;
       if (config.rpcError) return { data: null, error: config.rpcError };
       return { data: config.rpcData ?? null, error: null };
