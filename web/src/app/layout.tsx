@@ -1,7 +1,7 @@
 ﻿import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
-import AuthControls from '../components/AuthControls';
 import { AuthProvider } from '../components/AuthProvider';
+import SessionHeader from '../components/SessionHeader';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -15,9 +15,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="es">
       <body>
         <AuthProvider>
-          <header className="site-header">
-            <AuthControls />
-          </header>
+          <SessionHeader />
           {children}
         </AuthProvider>
       </body>
