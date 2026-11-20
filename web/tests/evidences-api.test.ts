@@ -654,6 +654,214 @@ describe('paso 3: confirmar la evidencia', () => {
   });
 });
 
+describe('paso 3: recálculo de la credibilidad (HU-06/T5)', () => {
+  const credibility = {
+    score: 55,
+    level: 'medium' as const,
+    updatedAt: '2026-11-19T10:00:00.000Z',
+    sufficientData: false,
+  };
+
+  // Fila de `report_credibility_inputs` tras guardar una evidencia visible.
+  const inputsRow = {
+    report_id: REPORT,
+    report_created_at: '2026-11-18T10:00:00.000Z',
+    visible_evidences: 1,
+    latest_evidence_at: '2026-11-19T10:00:00.000Z',
+    validations: 0,
+    validation_trust_sum: 0,
+    invalidations: 0,
+    invalidation_trust_sum: 0,
+    latest_assessment_at: null,
+  };
+
+  const confirmed = { uploadId: UPLOAD, originalName: 'captura.png' };
+
+  /** Confirmación con el original subido y, si se indica, el recálculo inyectado. */
+  const confirmWith = (
+    config: FakeSupabaseConfig = {},
+    recalculateCredibility?: ReturnType<typeof vi.fn>,
+    value: unknown = confirmed,
+    extra: { onEvidenceSaved?: ReturnType<typeof vi.fn> } = {},
+  ) => {
+    const context = setup({
+      objects: new Map([
+        [rawPath, new Blob([pngWithGps], { type: 'image/png' })],
+      ]),
+      ...config,
+    });
+    context.options.newId = () => EVIDENCE;
+    const options = {
+      ...context.options,
+      ...extra,
+      ...(recalculateCredibility ? { recalculateCredibility } : {}),
+    };
+    return {
+      context,
+      run: () =>
+        confirmEvidence(
+          { reportId: REPORT, accessToken: TOKEN, readBody: body(value) },
+          options,
+        ),
+    };
+  };
+
+  it('recalcula una vez, tras registrar la evidencia, con evidence_added y su id', async () => {
+    const seen: { inserted: number; removed: string[][] }[] = [];
+    const recalculate = vi.fn();
+    const { context, run } = confirmWith({}, recalculate);
+    recalculate.mockImplementation(async () => {
+      seen.push({
+        inserted: context.calls.inserted.length,
+        removed: [...context.calls.removed],
+      });
+      return credibility;
+    });
+
+    const result = await run();
+
+    expect(recalculate).toHaveBeenCalledOnce();
+    expect(recalculate).toHaveBeenCalledWith(
+      REPORT,
+      { cause: 'evidence_added', triggerId: EVIDENCE },
+      expect.objectContaining({ client: context.client }),
+    );
+    expect(result.evidence.id).toBe(EVIDENCE);
+    // Después de insertar la fila y de retirar el original.
+    expect(seen).toEqual([{ inserted: 1, removed: [[rawPath]] }]);
+  });
+
+  it('por defecto usa recalculateReportCredibility con el cliente de la petición', async () => {
+    const { context, run } = confirmWith({ rpcData: [inputsRow] });
+
+    await expect(run()).resolves.toMatchObject({ evidence: { id: EVIDENCE } });
+
+    expect(context.calls.rpc).toEqual([
+      { name: 'report_credibility_inputs', args: { report_ids: [REPORT] } },
+    ]);
+    expect(context.options.logError).not.toHaveBeenCalled();
+  });
+
+  it('si el recálculo falla, la evidencia sigue confirmada y la respuesta HTTP es la misma', async () => {
+    const respond = async (recalculate: ReturnType<typeof vi.fn>) => {
+      const { context, run } = confirmWith({}, recalculate);
+      const response = await runEvidenceOperation(201, run, vi.fn());
+      return { context, response };
+    };
+
+    const ok = await respond(vi.fn().mockResolvedValue(credibility));
+    const failing = vi
+      .fn()
+      .mockRejectedValue(new Error('detalle interno de la RPC (secreto)'));
+    const failed = await respond(failing);
+
+    expect(failing).toHaveBeenCalledOnce();
+    expect(failed.response).toEqual(ok.response);
+    expect(failed.response.status).toBe(201);
+    expect(JSON.stringify(failed.response.body)).not.toContain(
+      'detalle interno',
+    );
+    // La evidencia no se compensa: la fila y la copia limpia se conservan.
+    expect(failed.context.calls.inserted).toHaveLength(1);
+    expect(failed.context.calls.removed).toEqual([[rawPath]]);
+  });
+
+  it('un fallo real del cálculo queda registrado con la causa y no cambia el 201', async () => {
+    const { context, run } = confirmWith({
+      rpcError: { message: 'connection refused' },
+    });
+
+    const response = await runEvidenceOperation(201, run, vi.fn());
+
+    expect(response.status).toBe(201);
+    expect(response.body).toMatchObject({ evidence: { id: EVIDENCE } });
+    expect(JSON.stringify(response.body)).not.toContain('connection refused');
+    expect(context.options.logError).toHaveBeenCalledWith(
+      expect.stringContaining(`evidence_added (${EVIDENCE})`),
+      expect.objectContaining({ code: 'UNAVAILABLE' }),
+    );
+  });
+
+  it('el enganche onEvidenceSaved se sigue llamando aunque falle el recálculo', async () => {
+    const onEvidenceSaved = vi.fn().mockResolvedValue(undefined);
+    const recalculate = vi.fn().mockRejectedValue(new Error('caído'));
+    const { run } = confirmWith({}, recalculate, confirmed, {
+      onEvidenceSaved,
+    });
+
+    const result = await run();
+
+    expect(onEvidenceSaved).toHaveBeenCalledWith(result.evidence);
+  });
+
+  it.each([
+    [
+      'magic bytes falsos',
+      {
+        objects: new Map([
+          [
+            rawPath,
+            new Blob([new TextEncoder().encode('MZ ejecutable')], {
+              type: 'image/png',
+            }),
+          ],
+        ]),
+      },
+      confirmed,
+    ],
+    ['subida inexistente', { objects: new Map() }, confirmed],
+    ['fallo al descargar', { downloadError: { message: 'x' } }, confirmed],
+    ['fallo al guardar la copia', { uploadError: true }, confirmed],
+    [
+      'contenido duplicado',
+      { insertError: { code: '23505', message: 'duplicate key' } },
+      confirmed,
+    ],
+    [
+      'límite del trigger',
+      { insertError: { code: '23514', message: 'EVIDENCE_TOO_MANY' } },
+      confirmed,
+    ],
+    [
+      'fallo de la base de datos',
+      { insertError: { code: '42501', message: 'rls' } },
+      confirmed,
+    ],
+    ['tipo no permitido', {}, { uploadId: UPLOAD, originalName: 'a.pdf' }],
+    ['cuerpo no válido', {}, { uploadId: 'no-es-uuid' }],
+    ['perfil inactivo', { profile: { id: USER, is_active: false } }, confirmed],
+    ['sin sesión', { user: null }, confirmed],
+  ])(
+    'no recalcula si la confirmación falla: %s',
+    async (_case, config, value) => {
+      const recalculate = vi.fn().mockResolvedValue(credibility);
+      const { run } = confirmWith(
+        config as FakeSupabaseConfig,
+        recalculate,
+        value,
+      );
+
+      await expect(run()).rejects.toBeInstanceOf(EvidenceApiError);
+      expect(recalculate).not.toHaveBeenCalled();
+    },
+  );
+
+  it('repetir la confirmación de la misma subida no recalcula dos veces', async () => {
+    const recalculate = vi.fn().mockResolvedValue(credibility);
+    const { context, run } = confirmWith({}, recalculate);
+
+    await run();
+    // El original ya se retiró: la segunda confirmación no encuentra la subida.
+    expect(await errorOf(run())).toMatchObject({
+      status: 400,
+      code: 'EVIDENCE_UPLOAD_MISSING',
+    });
+
+    expect(recalculate).toHaveBeenCalledOnce();
+    expect(context.calls.inserted).toHaveLength(1);
+  });
+});
+
 describe('lectura de evidencias', () => {
   const row = (id: string, createdAt: string) => ({
     id,
