@@ -347,7 +347,7 @@ async function fetchCredibility(
  * agregados, calcula y devuelve; no escribe nada. `context` solo se usa para
  * registrar la causa de un fallo y no cambia el resultado.
  *
- * Quien lo invoque tras guardar algo (HU-06/T5, HU-08/T4) debe hacerlo dentro
+ * Quien lo invoque tras guardar algo (HU-06/T5, HU-08/T7) debe hacerlo dentro
  * de un try/catch que no cambie su respuesta: el fallo ya queda registrado.
  */
 export async function recalculateReportCredibility(

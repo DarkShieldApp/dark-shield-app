@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { checkAssessmentAuthorization } from './assessment-authorization';
+import { recalculateReportCredibility } from './credibility';
 import {
   createAuthenticatedSupabaseClient,
   extractBearerToken,
@@ -33,7 +34,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** T4: no credibility hook (T7). Success only follows a committed RPC response. */
+/** T4/T7: persist first; a credibility failure must not change the saved receipt. */
 export async function submitAssessment(
   request: Request,
   context: { params: Promise<{ reportId: string }> },
@@ -112,6 +113,15 @@ export async function submitAssessment(
       !Number.isFinite(Date.parse(data.createdAt))
     ) {
       return failure('SERVICE_UNAVAILABLE');
+    }
+    try {
+      await recalculateReportCredibility(
+        data.reportId,
+        { cause: 'validation_added', triggerId: data.id },
+        { client },
+      );
+    } catch {
+      // HU-09 already logs the failure. The assessment remains committed.
     }
     return Response.json(
       {

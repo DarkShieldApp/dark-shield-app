@@ -1,6 +1,7 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import { createClient } from '@supabase/supabase-js';
 import { POST } from '../src/app/api/reports/[reportId]/assessments/route';
+import * as credibility from '../src/server/credibility';
 
 vi.mock('server-only', () => ({}));
 vi.mock('@supabase/supabase-js', () => ({ createClient: vi.fn() }));
@@ -28,11 +29,35 @@ const request = (
     headers: header ? { authorization: header } : {},
     body,
   });
-const run = (
+const run = async (
   body?: string,
   reportId = report,
   header: string | null = 'Bearer token',
-) => POST(request(body, header), { params: Promise.resolve({ reportId }) });
+) => {
+  const calculations = vi.mocked(credibility.recalculateReportCredibility).mock
+    .calls.length;
+  const response = await POST(request(body, header), {
+    params: Promise.resolve({ reportId }),
+  });
+  // Applies to every existing rejection, including mixed success/failure scenarios.
+  if (response.status !== 201) {
+    expect(credibility.recalculateReportCredibility).toHaveBeenCalledTimes(
+      calculations,
+    );
+  }
+  return response;
+};
+const aggregate = (action = 'validate', reportId = report) => ({
+  report_id: reportId,
+  report_created_at: '2026-11-19T12:00:00Z',
+  visible_evidences: 0,
+  latest_evidence_at: null,
+  validations: action === 'validate' ? 1 : 0,
+  validation_trust_sum: action === 'validate' ? 30 : 0,
+  invalidations: action === 'invalidate' ? 1 : 0,
+  invalidation_trust_sum: action === 'invalidate' ? 30 : 0,
+  latest_assessment_at: result().createdAt,
+});
 let submitResult: {
   data: unknown;
   error?: { code: string; message?: string };
@@ -41,6 +66,9 @@ let submitResult: {
 let policyResult: { data: unknown; error?: object };
 beforeEach(() => {
   vi.resetAllMocks();
+  // Observe the real HU-09 service: only SDK I/O is replaced.
+  vi.spyOn(credibility, 'recalculateReportCredibility');
+  vi.spyOn(console, 'error').mockImplementation(() => {});
   vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://project.example.com');
   vi.stubEnv('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', 'sb_publishable_test');
   vi.stubEnv('ASSESSMENTS_MIN_TRUST_LEVEL', '20');
@@ -61,12 +89,17 @@ beforeEach(() => {
   policyResult = { data: { minimumTrustLevel: 20, revision } };
   submitResult = { data: result() };
   rpc.mockImplementation(
-    async (name: string, args?: { requested_action: string }) => {
+    async (
+      name: string,
+      args?: { requested_action: string; report_ids: string[] },
+    ) => {
       if (name === 'my_permissions')
         return {
           data: { roleCode: 'developer', permissions: ['assessments.submit'] },
         };
       if (name === 'assessment_policy') return policyResult;
+      if (name === 'report_credibility_inputs')
+        return { data: [aggregate('validate', args?.report_ids[0])] };
       if (name === 'submit_report_assessment') {
         if (submitResult.data && !submitResult.error)
           return {
@@ -94,11 +127,22 @@ it.each(['validate', 'invalidate'])(
     expect(response.headers.get('cache-control')).toBe('private, no-store');
     expect(getUser).toHaveBeenCalledWith('token');
     expect(eq).toHaveBeenCalledWith('id', actor);
-    expect(rpc).toHaveBeenLastCalledWith('submit_report_assessment', {
+    expect(rpc).toHaveBeenNthCalledWith(3, 'submit_report_assessment', {
       target_report_id: report,
       requested_action: action,
       expected_policy_revision: revision,
     });
+    expect(
+      credibility.recalculateReportCredibility,
+    ).toHaveBeenCalledExactlyOnceWith(
+      report,
+      { cause: 'validation_added', triggerId: id },
+      { client: vi.mocked(createClient).mock.results.at(-1)?.value },
+    );
+    expect(rpc).toHaveBeenLastCalledWith('report_credibility_inputs', {
+      report_ids: [report],
+    });
+    expect(console.error).not.toHaveBeenCalled();
     expect(from).toHaveBeenCalledExactlyOnceWith('profiles');
     expect(createClient).toHaveBeenLastCalledWith(
       'https://project.example.com',
@@ -297,6 +341,151 @@ it('awaits the write confirmation before returning', async () => {
   });
   await vi.waitFor(() => expect(rpc).toHaveBeenCalledTimes(3));
   expect(finished).toBe(false);
+  expect(credibility.recalculateReportCredibility).not.toHaveBeenCalled();
   resolve({ data: result() });
   expect((await operation).status).toBe(201);
+  expect(credibility.recalculateReportCredibility).toHaveBeenCalledOnce();
+});
+
+it.each(['validate', 'invalidate'])(
+  'uses the real HU-09 calculation after %s without adding a score to the receipt',
+  async (action) => {
+    const sdk = rpc.getMockImplementation()!;
+    rpc.mockImplementation((name, args) =>
+      name === 'report_credibility_inputs'
+        ? Promise.resolve({ data: [aggregate(action)] })
+        : sdk(name, args),
+    );
+    const response = await run(JSON.stringify({ action }));
+    expect(response.status).toBe(201);
+    expect(await response.json()).toEqual(result(action));
+    await expect(
+      vi.mocked(credibility.recalculateReportCredibility).mock.results[0]
+        ?.value,
+    ).resolves.toMatchObject({
+      score: action === 'validate' ? 60 : 40,
+      sufficientData: false,
+      factors: {
+        assessors: 1,
+        validations: action === 'validate' ? 1 : 0,
+        invalidations: action === 'invalidate' ? 1 : 0,
+      },
+    });
+    expect(console.error).not.toHaveBeenCalled();
+  },
+);
+
+it.each([
+  'rpc error',
+  'transport exception',
+  'missing report',
+  'invalid aggregates',
+])(
+  'preserves the committed receipt and logs once on credibility %s',
+  async (failure) => {
+    const sdk = rpc.getMockImplementation()!;
+    rpc.mockImplementation((name, args) => {
+      if (name !== 'report_credibility_inputs') return sdk(name, args);
+      if (failure === 'transport exception')
+        throw new Error('sensitive upstream detail');
+      if (failure === 'rpc error')
+        return Promise.resolve({
+          error: { message: 'sensitive upstream detail' },
+        });
+      return Promise.resolve({
+        data: failure === 'missing report' ? [] : [{}],
+      });
+    });
+    const response = await run();
+    expect(response.status).toBe(201);
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    expect(await response.json()).toEqual(result());
+    expect(console.error).toHaveBeenCalledExactlyOnceWith(
+      `No se pudo calcular la credibilidad del reporte ${report} [validation_added (${id})]`,
+      expect.any(credibility.CredibilityError),
+    );
+    expect(rpc.mock.calls.map(([name]) => name)).toEqual([
+      'my_permissions',
+      'assessment_policy',
+      'submit_report_assessment',
+      'report_credibility_inputs',
+    ]);
+    expect(from).toHaveBeenCalledExactlyOnceWith('profiles');
+  },
+);
+
+it.each([false, true])(
+  'awaits the credibility attempt, including rejection=%s',
+  async (reject) => {
+    let resolve!: (value: unknown) => void;
+    let rejectCalculation!: (reason: Error) => void;
+    const pending = new Promise((yes, no) => {
+      resolve = yes;
+      rejectCalculation = no;
+    });
+    const sdk = rpc.getMockImplementation()!;
+    rpc.mockImplementation((name, args) =>
+      name === 'report_credibility_inputs' ? pending : sdk(name, args),
+    );
+    let finished = false;
+    const operation = run().then((response) => {
+      finished = true;
+      return response;
+    });
+    await vi.waitFor(() => expect(rpc).toHaveBeenCalledTimes(4));
+    expect(finished).toBe(false);
+    expect(credibility.recalculateReportCredibility).toHaveBeenCalledOnce();
+    if (reject) rejectCalculation(new Error('private failure'));
+    else resolve({ data: [aggregate()] });
+    const response = await operation;
+    expect(response.status).toBe(201);
+    expect(await response.json()).toEqual(result());
+    expect(console.error).toHaveBeenCalledTimes(reject ? 1 : 0);
+  },
+);
+
+it('recalculates each confirmed history entry with its own trigger and fresh aggregates', async () => {
+  const sdk = rpc.getMockImplementation()!;
+  let latestAction = 'validate';
+  rpc.mockImplementation((name, args) =>
+    name === 'report_credibility_inputs'
+      ? Promise.resolve({ data: [aggregate(latestAction)] })
+      : sdk(name, args),
+  );
+  const ids = [
+    id,
+    '08000000-0000-4000-8000-000000000005',
+    '08000000-0000-4000-8000-000000000006',
+  ];
+  for (const [index, action] of [
+    'validate',
+    'invalidate',
+    'validate',
+  ].entries()) {
+    latestAction = action;
+    submitResult = { data: { ...result(action), id: ids[index] } };
+    expect(await (await run(JSON.stringify({ action }))).json()).toEqual(
+      submitResult.data,
+    );
+    expect(credibility.recalculateReportCredibility).toHaveBeenNthCalledWith(
+      index + 1,
+      report,
+      { cause: 'validation_added', triggerId: ids[index] },
+      expect.objectContaining({ client: expect.anything() }),
+    );
+    await expect(
+      vi.mocked(credibility.recalculateReportCredibility).mock.results[index]
+        ?.value,
+    ).resolves.toMatchObject({
+      score: action === 'validate' ? 60 : 40,
+      factors: { assessors: 1 },
+    });
+  }
+  expect(
+    rpc.mock.calls.filter(([name]) => name === 'submit_report_assessment'),
+  ).toHaveLength(3);
+  expect(
+    rpc.mock.calls.filter(([name]) => name === 'report_credibility_inputs'),
+  ).toHaveLength(3);
+  // Latest-per-assessor selection remains the existing SQL responsibility; no SQL is simulated here.
 });

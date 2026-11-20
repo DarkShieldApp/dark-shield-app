@@ -1,4 +1,4 @@
-# Valoraciones de reportes — HU-08/T4
+# Valoraciones de reportes — HU-08/T4 y T7
 
 ## Contrato HTTP para T5 y T6
 
@@ -142,15 +142,47 @@ Procedimiento, después de aprobación y sobre el proyecto confirmado:
 Solo se versiona aquí la estructura. Los mínimos de los tests son fixtures, no
 reglas aprobadas. No se modifica ningún `.env` ni proyecto remoto.
 
+## Integración con credibilidad — HU-08/T7
+
+Tras recibir y validar el recibo confirmado de `submit_report_assessment`, el
+servidor espera `recalculateReportCredibility(receipt.reportId,
+{ cause: 'validation_added', triggerId: receipt.id }, { client })` tanto para
+`validate` como para `invalidate`. Reutiliza el cliente autenticado de la petición,
+sin claves privilegiadas. Un rechazo, fallo de escritura o recibo inválido no
+dispara el cálculo. La causa identifica una nueva valoración de cualquiera de
+las dos acciones; no significa necesariamente una validación favorable.
+
+HU-09/T2 consulta `report_credibility_inputs` y calcula desde los agregados actuales:
+solo cuenta la última valoración de cada usuario activo distinto del autor, con
+su confianza actual, y las evidencias visibles según HU-09. La RLS limita los
+reportes accesibles. Los permisos revocados posteriormente no borran el historial.
+La credibilidad es dinámica y **no es un veredicto definitivo**.
+
+Esta lectura no persiste una puntuación ni actualiza una caché. No se añaden
+columnas, tablas, triggers ni otra fórmula. Cada escritura confirmada provoca una
+consulta nueva; el historial y la selección de la última valoración siguen siendo
+los de T4/HU-09. Si hay escrituras concurrentes, la lectura puede incluir otras
+valoraciones ya confirmadas, no representa una instantánea exclusiva del recibo.
+
+La llamada se espera dentro de un `try/catch`: no queda una promesa en segundo
+plano al terminar la petición. Si falla, HU-09 registra una sola vez el error con
+reporte, causa e identificador de valoración. T7 captura el rechazo sin duplicar
+el log y mantiene el mismo `201` y recibo, sin puntuación ni detalles internos.
+No hay rollback, borrado compensatorio ni reintento automático. Una consulta
+posterior de credibilidad vuelve a leer los datos persistidos. Esperar el cálculo
+añade su latencia a la respuesta; no se incorpora una cola ni un timeout nuevo.
+
 ## Alcance y verificación
 
-No se implementan interfaz T5, UX T6, invocación de credibilidad T7, login HU-11
-ni E2E T8. HU-11 debe suministrar y renovar tokens para el flujo final. Aunque la
-documentación de HU-09 menciona un hook tras persistir, conectarlo corresponde
-expresamente a T7 en este encargo.
+T7 conecta exclusivamente las valoraciones con el servicio existente de HU-09.
+No implementa interfaz T5, UX T6, login HU-11, E2E T8 ni la integración de
+evidencias HU-06/T5. HU-11 debe suministrar y renovar tokens para el flujo final.
 
 - Vitest importa la ruta real y ejecuta T2, sesión y consulta de perfil con la E/S
   del SDK sustituida. Cubre entradas, recibos, errores y rechazos en la escritura.
+  Ejecuta también el servicio y la fórmula reales de HU-09, observando argumentos,
+  orden escritura/cálculo, ausencia de llamadas ante rechazos, esperas, fallos con
+  un único log y recibo intacto, y consultas nuevas tras repetir una valoración.
 - `assessment_submission.test.sql`: funciones reales, ACL/RLS, política, identidad,
   integridad, repeticiones y compatibilidad con los agregados existentes.
 - `assessment_submission_concurrency.test.sql`: conexiones `dblink` independientes,
@@ -166,3 +198,8 @@ con datos reales. La otra suite usa rollback. `dblink` solo pertenece a los test
 Ejecutar `npm.cmd run check`, `npm.cmd run test:coverage`, `npm.cmd run test:db`
 (con `-- --workdir <directorio>` para la instancia independiente) y
 `git diff --check`. No resetear bases existentes para reproducir la prueba.
+
+T7 no modifica SQL, migraciones, RLS, ACL ni la selección de agregados: para esta
+integración TypeScript no es necesario repetir pgTAP. Sus pruebas existentes
+siguen verificando las reglas SQL; los tests de T7 no atribuyen a sus respuestas
+controladas del SDK una verificación de PostgreSQL real.
