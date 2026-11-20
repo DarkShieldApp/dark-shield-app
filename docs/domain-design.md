@@ -276,8 +276,8 @@ El contrato HTTP completo está en [`docs/api/reports.md`](api/reports.md#6-get-
 - `queryReports` (`web/src/server/reports.ts`) añade `items[].credibility` con una sola llamada a `getReportsCredibility` por página y el mismo cliente sin sesión. Si un reporte no tiene resultado, su valor es `null`. Si el cálculo falla, se registra (`console.error` u opción `logError`) y todos quedan en `null`: la consulta no pasa a error ni a lista vacía (flujo alternativo de HU-01). Contrato en [`docs/api/reports.md`](api/reports.md#credibilidad-en-el-listado).
 - `ReportCredibilitySummary` (`web/src/lib/reports/query.ts`) replica la forma de `CredibilityResult` sin importar código del servidor. Un test de tipos comprueba que ambos son asignables entre sí.
 - `parseReportsResponse` normaliza a `null` una credibilidad mal formada en lugar de descartar la respuesta.
-- `describeCredibility` (`web/src/lib/reports/summary.ts`) da la etiqueta: «Credibilidad no disponible» sin valor, «Datos insuficientes» si `sufficientData` no es `true` (nunca «Media») y, en otro caso, «Alta», «Media» o «Baja». `ReportSummaryCard` la muestra como texto, con un color de apoyo con contraste suficiente, y debajo el aviso «La credibilidad cambia con nuevas evidencias y valoraciones; no es una garantía» (HU01-FL-06 y HU-09). No muestra la puntuación ni explica los factores.
-- **Pendiente:** HU-09/T3 explica los factores. Puede reutilizar `describeCredibility` y su `status`.
+- `describeCredibility` (`web/src/lib/reports/summary.ts`) da la etiqueta: «Credibilidad no disponible» sin valor, «Datos insuficientes» si `sufficientData` no es `true` (nunca «Media») y, en otro caso, «Alta», «Media» o «Baja». `ReportSummaryCard` la muestra como texto, con un color de apoyo con contraste suficiente, y debajo el aviso «La credibilidad cambia con nuevas evidencias y valoraciones; no es una garantía» (HU01-FL-06 y HU-09). No muestra la puntuación como veredicto.
+- **HU-09/T3 implementada:** `ReportSummaryCard` añade «Cómo se calcula», un desglose desplegable de los factores agregados y mensajes para la ausencia del desglose o del cálculo.
 
 #### Integración y decisiones de implementación
 
@@ -607,7 +607,7 @@ Las pruebas `profiles_backfill`, `reports_backfill` y `roles_backfill` reaplican
 
 **Requisito relacionado:** HU-09 — Consultar la credibilidad de un reporte.
 **Origen de esta definición:** HU-09, T1 — Diseñar un algoritmo de ponderación que distinga entre votos de usuarios según su nivel de confianza.
-**Estado:** diseño (T1) e **implementado para HU-09/T2** (cálculo y acceso a datos; véase «Implementación (HU-09/T2)»). La presentación en el listado está implementada desde HU-01/T7. Quedan pendientes la explicación de factores (HU-09/T3) y la invocación tras guardar una evidencia (HU-06/T5) o una valoración (HU-08/T4 y T7). Respeta el contrato acordado en la PR #13 (fila «Credibilidad (T5)» de las decisiones de HU-06/T4) y tiene en cuenta HU-10/T2–T3 (PR #28).
+**Estado:** diseño (T1), cálculo y acceso a datos implementados para HU-09/T2, estado en el listado con HU-01/T7 y explicación visible de factores implementada para HU-09/T3. Siguen pendientes las llamadas tras guardar una evidencia (HU-06/T5) o una valoración (HU-08/T4 y T7). Respeta el contrato acordado en la PR #13 (fila «Credibilidad (T5)» de las decisiones de HU-06/T4) y tiene en cuenta HU-10/T2–T3 (PR #28).
 
 ### Criterios que debe cumplir
 
@@ -700,7 +700,7 @@ level = 'medium'                  si no sufficientData
 - **HU-01:** un reporte sin datos suficientes **nunca es `high`**, así que no se presenta como respaldado. Tampoco puede serlo con solo evidencias ni con un único valorador.
 - **RV-VAL-04:** se exigen al menos dos valoradores; una sola persona, por mucha confianza que tenga, no lleva el reporte a `high` ni a `low`. Por simetría, un único voto hostil tampoco hunde un reporte.
 - La masa mínima (1,0) evita que dos cuentas nuevas (0,5 en total) basten: hacen falta, por ejemplo, cuatro valoradores de confianza 1 o dos valoradores con evidencias.
-- Sin datos suficientes el nivel es `medium`, entendido como **indeterminado**. Para que la interfaz no lo confunda con «credibilidad moderada», el resultado incluye `sufficientData` (abajo) y HU-09/T3 debe mostrar «Datos insuficientes» en ese caso.
+- Sin datos suficientes el nivel es `medium`, entendido como **indeterminado**. Para que la interfaz no lo confunda con «credibilidad moderada», el resultado incluye `sufficientData` (abajo) y la interfaz muestra «Datos insuficientes» en ese caso.
 
 #### Campos opcionales del resultado
 
@@ -729,7 +729,7 @@ export interface CredibilityResult {
 
 #### Presentación (HU-09/T3 y HU-01/T7)
 
-HU-01/T7 implementa la parte del listado (etiqueta, «Datos insuficientes», aviso y ausencia de valor). HU-09/T3 añadirá la explicación de los factores.
+HU-01/T7 implementa la parte del listado (etiqueta, «Datos insuficientes», aviso y ausencia de valor). HU-09/T3 presenta en cada tarjeta un desglose desplegable de evidencias, validaciones, invalidaciones, personas valoradoras y pesos a favor/en contra. Describe reglas de cómputo ya definidas, sin mostrar puntuación como veredicto ni revelar la confianza individual o identidad de quien valoró. Si el cálculo no proporciona factores, la tarjeta lo indica explícitamente.
 
 Mostrar el nivel con texto (no solo color), la indicación «Datos insuficientes» cuando `sufficientData` sea `false` y un aviso del tipo «La credibilidad cambia con nuevas evidencias y valoraciones; no es una garantía de que el patrón exista». Si la credibilidad no está disponible (error), se muestra el reporte sin inventarla (HU01-FL-06 y flujos alternativos de HU-01).
 

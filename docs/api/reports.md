@@ -251,7 +251,7 @@ Desde HU-01/T7 cada item lleva el campo **aditivo** `credibility`. Los clientes 
 | `credibility.score`          | Puntuación de 0 a 100. Es un dato del cálculo y el listado no la muestra como veredicto.                          |
 | `credibility.sufficientData` | `false` si aún no hay valoraciones suficientes. En ese caso `level` es `medium` en el sentido de «indeterminado». |
 | `credibility.updatedAt`      | Fecha de la entrada contada más reciente o, si no hay ninguna, la de creación del reporte (ISO 8601).             |
-| `credibility.factors`        | Recuentos y pesos del cálculo. Su explicación corresponde a HU-09/T3.                                             |
+| `credibility.factors`        | Recuentos y pesos del cálculo. HU-09/T3 los explica de forma agregada en la tarjeta del reporte.                  |
 
 Semántica:
 
