@@ -25,7 +25,8 @@ import {
  * Evidencias de reportes (HU-06/T4). Contrato en docs/domain-design.md y
  * docs/api/evidences.md. Se trabaja siempre como `authenticated` con el token
  * Bearer del usuario: la autorización la decide la RLS de la tabla y del
- * bucket; este módulo valida, recodifica y compensa los fallos.
+ * bucket, y los POST exigen además el permiso `evidences.add` (HU-06/CA1);
+ * este módulo valida, recodifica y compensa los fallos.
  */
 export const EVIDENCE_BUCKET = 'report-evidences';
 
@@ -164,8 +165,8 @@ function toResource(row: EvidenceRow): EvidenceResource {
 }
 
 /**
- * Sesión (401), perfil activo si se exige (403) y reporte legible (404), en
- * este orden. Devuelve el cliente que se usará en el resto de la operación.
+ * Sesión (401); si se exige, perfil activo (403) y permiso `evidences.add`
+ * (403); y reporte legible (404), en este orden. Devuelve el cliente que se usará en el resto de la operación.
  */
 async function authorize(
   { reportId, accessToken }: RequestContext,
@@ -203,6 +204,31 @@ async function authorize(
         403,
         'FORBIDDEN_INACTIVE_PROFILE',
         'Tu cuenta de colaborador no está activa para aportar evidencias.',
+      );
+    }
+
+    // HU-06/CA1: la RPC de HU-14/T3 deriva el sujeto de auth.uid() y lee la
+    // matriz vigente; no se deduce el permiso a partir de role_code.
+    const { data: effective, error: permissionError } =
+      await client.rpc('my_permissions');
+    if (permissionError) {
+      throw new EvidenceApiError(
+        500,
+        'PERMISSION_LOOKUP_FAILED',
+        'No se pudieron comprobar los permisos.',
+      );
+    }
+    const permissions = (effective as { permissions?: unknown } | null)
+      ?.permissions;
+    if (
+      !Array.isArray(permissions) ||
+      !permissions.every((permission) => typeof permission === 'string') ||
+      !permissions.includes('evidences.add')
+    ) {
+      throw new EvidenceApiError(
+        403,
+        'FORBIDDEN_MISSING_PERMISSION',
+        'No tienes permiso para aportar evidencias.',
       );
     }
   }
