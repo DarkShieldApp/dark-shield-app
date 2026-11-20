@@ -63,7 +63,7 @@ let submitResult: {
   error?: { code: string; message?: string };
   status?: number;
 };
-let policyResult: { data: unknown; error?: object };
+let policyResult: { data: unknown; error?: object; status?: number };
 beforeEach(() => {
   vi.resetAllMocks();
   // Observe the real HU-09 service: only SDK I/O is replaced.
@@ -488,4 +488,117 @@ it('recalculates each confirmed history entry with its own trigger and fresh agg
     rpc.mock.calls.filter(([name]) => name === 'report_credibility_inputs'),
   ).toHaveLength(3);
   // Latest-per-assessor selection remains the existing SQL responsibility; no SQL is simulated here.
+});
+
+const intermediateErrors = [
+  { status: 401, code: 'PGRST301', expected: 401 },
+  { status: 401, code: 'PGRST303', expected: 401 },
+  { status: 401, code: '42501', expected: 401 },
+  { status: undefined, code: 'PGRST301', expected: 401 },
+  { status: undefined, code: 'PGRST302', expected: 401 },
+  { status: undefined, code: 'PGRST303', expected: 401 },
+  { status: 403, code: '42501', expected: 503 },
+  { status: undefined, code: '42501', expected: 503 },
+  { status: 500, code: 'PGRST300', expected: 503 },
+  { status: 503, code: 'PGRST000', expected: 503 },
+  { status: 0, code: '', expected: 503 },
+  { status: undefined, code: 'unknown', expected: 503 },
+  // An explicit infrastructure response must not be overridden by its payload.
+  { status: 503, code: 'PGRST301', expected: 503 },
+];
+it.each(
+  ['profile', 'my_permissions', 'assessment_policy'].flatMap((stage) =>
+    intermediateErrors.map((error) => ({ stage, ...error })),
+  ),
+)(
+  'classifies $stage status=$status code=$code as $expected without writing',
+  async ({ stage, status, code, expected }) => {
+    const upstream = {
+      status,
+      data: {
+        permissions: ['assessments.submit'],
+        minimumTrustLevel: 20,
+        revision,
+        id: actor,
+        is_active: true,
+        trust_level: 30,
+      },
+      error: {
+        code,
+        message: 'JWT expired: sensitive upstream detail',
+        details: 'private detail',
+        hint: 'private hint',
+      },
+    };
+    if (stage === 'profile') maybeSingle.mockResolvedValue(upstream);
+    else if (stage === 'assessment_policy') policyResult = upstream;
+    else {
+      const sdk = rpc.getMockImplementation()!;
+      rpc.mockImplementation((name, args) =>
+        name === stage ? Promise.resolve(upstream) : sdk(name, args),
+      );
+    }
+    const response = await run();
+    expect(response.status).toBe(expected);
+    expect(await response.json()).toEqual({
+      error:
+        expected === 401
+          ? {
+              code: 'UNAUTHENTICATED',
+              message: 'Se requiere una sesión válida.',
+            }
+          : {
+              code: 'SERVICE_UNAVAILABLE',
+              message: 'No se pudo completar la valoración.',
+            },
+    });
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    expect(response.headers.get('content-type')).toContain('application/json');
+    expect(rpc.mock.calls.map(([name]) => name)).toEqual(
+      stage === 'profile'
+        ? []
+        : stage === 'my_permissions'
+          ? ['my_permissions']
+          : ['my_permissions', 'assessment_policy'],
+    );
+    expect(credibility.recalculateReportCredibility).not.toHaveBeenCalled();
+  },
+);
+
+it('returns the exact temporary-service error for Auth 429, without querying or writing', async () => {
+  getUser.mockResolvedValue({
+    data: { user: { id: actor } },
+    error: {
+      status: 429,
+      code: 'over_request_rate_limit',
+      message: 'private detail',
+    },
+  });
+  const response = await run();
+  expect(response.status).toBe(503);
+  expect(await response.json()).toEqual({
+    error: {
+      code: 'SERVICE_UNAVAILABLE',
+      message: 'No se pudo completar la valoración.',
+    },
+  });
+  expect(response.headers.get('cache-control')).toBe('private, no-store');
+  expect(from).not.toHaveBeenCalled();
+  expect(rpc).not.toHaveBeenCalled();
+  expect(credibility.recalculateReportCredibility).not.toHaveBeenCalled();
+});
+
+it('preserves the exact 403 contract for an effective permission denial', async () => {
+  rpc.mockResolvedValue({ data: { permissions: [] }, error: null });
+  const response = await run();
+  expect(response.status).toBe(403);
+  expect(await response.json()).toEqual({
+    error: {
+      code: 'FORBIDDEN',
+      message: 'No tienes autorización para valorar este reporte.',
+    },
+  });
+  expect(response.headers.get('cache-control')).toBe('private, no-store');
+  expect(rpc).toHaveBeenCalledExactlyOnceWith('my_permissions');
+  expect(credibility.recalculateReportCredibility).not.toHaveBeenCalled();
 });
