@@ -11,6 +11,9 @@ export default function HomePage() {
           web de forma colaborativa.
         </p>
         <div className="actions-row">
+          <Link href="/login" className="btn-secondary">
+            Iniciar sesión
+          </Link>
           <Link href="/consulta" className="btn-primary">
             Consultar reportes
           </Link>

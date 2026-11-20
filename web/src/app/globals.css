@@ -167,6 +167,11 @@ textarea.form-control {
   background-color: var(--primary-hover);
 }
 
+.btn-primary:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
 .btn-secondary {
   display: inline-flex;
   align-items: center;
