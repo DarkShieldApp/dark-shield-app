@@ -522,23 +522,23 @@ La sesión se aparta de la propuesta de usar `@supabase/ssr` (respuesta 6) para 
 
 Migración del endpoint: `insert into storage.buckets` de `report-evidences` con `public = false`, `file_size_limit = 10485760` y `allowed_mime_types = {image/png, image/jpeg, image/webp}`. Políticas para `authenticated` (ninguna para `anon`; ninguna de actualización, así que no se sobrescriben objetos):
 
-| Operación | Condición, además de `bucket_id = 'report-evidences'`                                                                                                                                                                             |
-| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `insert`  | La primera carpeta es `auth.uid()`, el perfil está activo, la segunda carpeta es un reporte legible y el nombre del archivo tiene la forma `{uuid}.{png\|jpg\|webp}`. `createSignedUploadUrl` exige este permiso.                 |
-| `select`  | La primera carpeta es `auth.uid()` (sus subidas, confirmadas o no), **o** existe una fila de `report_evidences` con ese `storage_path` legible para quien consulta (se delega en la RLS de la tabla). `createSignedUrl` lo exige. |
-| `delete`  | La primera carpeta es `auth.uid()` y el objeto **no** está registrado en `report_evidences`. Sirve para la compensación y para limpiar subidas sin confirmar; una evidencia confirmada no se puede borrar así.                    |
+| Operación | Condición, además de `bucket_id = 'report-evidences'`                                                                                                                                                                                           |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `insert`  | La primera carpeta es `auth.uid()`, el perfil está activo y tiene el rol `collaborator`, la segunda carpeta es un reporte legible y el nombre del archivo tiene la forma `{uuid}.{png\|jpg\|webp}`. `createSignedUploadUrl` exige este permiso. |
+| `select`  | La primera carpeta es `auth.uid()` (sus subidas, confirmadas o no), **o** existe una fila de `report_evidences` con ese `storage_path` legible para quien consulta (se delega en la RLS de la tabla). `createSignedUrl` lo exige.               |
+| `delete`  | La primera carpeta es `auth.uid()` y el objeto **no** está registrado en `report_evidences`. Sirve para la compensación y para limpiar subidas sin confirmar; una evidencia confirmada no se puede borrar así.                                  |
 
 #### Flujo de subida en dos pasos
 
 1. **Pedir las URL de subida.** `POST /api/reports/{reportId}/evidences/uploads` con `{ "files": [{ "name": "captura.png", "type": "image/png", "size": 48211 }] }` (de 1 a 5 archivos).
-   - El servidor comprueba la sesión (401), el perfil activo (403) y que el reporte sea legible (404).
+   - El servidor comprueba la sesión (401), el perfil activo con rol `collaborator` (403) y que el reporte sea legible (404).
    - Valida con `rules.ts` lo declarado: nombre, extensión, MIME y tamaño. La firma se comprueba al confirmar, con los bytes reales.
    - Comprueba que el colaborador no supere 5 evidencias en el reporte contando las ya guardadas; el _trigger_ es la garantía final.
    - Por cada archivo genera un `uploadId` (UUID) y la ruta `{user_id}/{reportId}/{uploadId}.{ext}`, y llama a `createSignedUploadUrl(ruta)` sin `upsert`.
    - Responde `201` con `{ "uploads": [{ "uploadId", "path", "token", "signedUrl" }] }`, en el mismo orden que `files`.
 2. **Subir.** El cliente sube cada archivo con `uploadToSignedUrl(path, token, file, { contentType })`. Storage aplica los límites del _bucket_.
 3. **Confirmar.** `POST /api/reports/{reportId}/evidences` con `{ "uploadId": "…", "originalName": "captura.png" }`, una evidencia por petición.
-   - Sesión (401), perfil (403) y reporte legible (404).
+   - Sesión (401), perfil activo con rol `collaborator` (403) y reporte legible (404).
    - Reconstruye la ruta a partir del usuario, del reporte, del `uploadId` y de la extensión de `originalName`; nunca acepta una ruta del cliente.
    - Si el objeto no existe: `400 EVIDENCE_UPLOAD_MISSING`.
    - Descarga el objeto y valida con `validateEvidenceFile` usando su tamaño real y sus primeros bytes. Si no es válido, borra el objeto y responde `400 EVIDENCE_REJECTED`.
@@ -561,6 +561,7 @@ Mismo formato que el resto de la API: `{ "error": { "code", "message", "details"
 | `400`  | `EVIDENCE_UPLOAD_MISSING`                                         | Se confirma una subida que no existe.                                                                                                             |
 | `401`  | `UNAUTHENTICATED`                                                 | Token ausente, caducado o inválido; siempre con el mensaje «Sesión no válida o caducada.».                                                        |
 | `403`  | `FORBIDDEN_INACTIVE_PROFILE`                                      | Perfil inexistente o inactivo (mismo código que `POST /api/reports`).                                                                             |
+| `403`  | `FORBIDDEN_ROLE`                                                  | El perfil activo no tiene el rol `collaborator`.                                                                                                  |
 | `404`  | `REPORT_NOT_FOUND`                                                | `reportId` mal formado, inexistente o no legible: no se distingue «no existe» de «no es visible».                                                 |
 | `409`  | `EVIDENCE_DUPLICATE`                                              | El mismo contenido ya está asociado al reporte.                                                                                                   |
 | `500`  | `EVIDENCE_STORAGE_FAILED`, `EVIDENCE_PERSISTENCE_FAILED`          | Fallo de Storage o de la base de datos, tras la compensación.                                                                                     |

@@ -41,6 +41,28 @@ describe('autenticación con contraseña', () => {
     });
   });
 
+  it('preserva un destino interno al confirmar el correo', async () => {
+    vi.stubGlobal('window', {
+      location: { origin, search: '?next=%2Freports%2Fnew' },
+    });
+
+    await registerWithPassword(
+      '@Ejemplo',
+      'persona@example.com',
+      'contraseña-segura',
+      client,
+    );
+
+    expect(client.auth.signUp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        options: {
+          emailRedirectTo: `${origin}/login?emailConfirmed=1&next=%2Freports%2Fnew`,
+          data: { username: 'ejemplo' },
+        },
+      }),
+    );
+  });
+
   it('rechaza nombres de usuario inválidos antes de llamar a Auth', async () => {
     await expect(
       registerWithPassword('@ab', 'persona@example.com', 'password', client),

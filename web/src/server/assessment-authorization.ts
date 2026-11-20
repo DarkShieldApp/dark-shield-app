@@ -72,6 +72,7 @@ export async function checkAssessmentAuthorization(
     const effective = data as Partial<EffectivePermissions> | null;
     if (
       !Array.isArray(effective?.permissions) ||
+      effective.roleCode !== 'collaborator' ||
       !effective.permissions.every(
         (permission) => typeof permission === 'string',
       ) ||

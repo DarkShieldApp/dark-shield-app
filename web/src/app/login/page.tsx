@@ -3,8 +3,10 @@
 import Link from 'next/link';
 import type { FormEvent } from 'react';
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '../../components/AuthProvider';
 import { isEmailIdentifier } from '../../lib/auth/username';
+import { getSafeReturnPath } from '../../lib/auth/return-path';
 import {
   registerWithPassword,
   requestPasswordReset,
@@ -21,6 +23,7 @@ type FormFeedback = {
 };
 
 export default function LoginPage() {
+  const router = useRouter();
   const {
     session,
     isLoading: isSessionLoading,
@@ -91,6 +94,13 @@ export default function LoginPage() {
           message: sessionError.message,
         });
       } else if (emailConfirmed) {
+        const returnPath = session
+          ? getSafeReturnPath(query.get('next'), window.location.origin)
+          : null;
+        if (returnPath) {
+          router.replace(returnPath);
+          return;
+        }
         setFeedback({
           action: 'callback',
           kind: 'success',
@@ -110,7 +120,7 @@ export default function LoginPage() {
     return () => {
       active = false;
     };
-  }, [isSessionLoading, session, sessionError]);
+  }, [isSessionLoading, router, session, sessionError]);
 
   async function handleSignUp(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -148,6 +158,14 @@ export default function LoginPage() {
     try {
       await signInWithPassword(signInIdentifier, signInPassword);
       setSignInPassword('');
+      const returnPath = getSafeReturnPath(
+        new URLSearchParams(window.location.search).get('next'),
+        window.location.origin,
+      );
+      if (returnPath) {
+        router.replace(returnPath);
+        return;
+      }
       setFeedback({
         action: 'sign-in',
         kind: 'success',

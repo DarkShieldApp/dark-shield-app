@@ -26,7 +26,7 @@ const VALID_BODY = {
 function buildMockSupabaseClient(options: {
   userId?: string | null;
   authError?: boolean;
-  profile?: { id: string; is_active: boolean } | null;
+  profile?: { id: string; is_active: boolean; role_code?: string } | null;
   profileError?: boolean;
   insertError?: boolean;
 }) {
@@ -194,7 +194,11 @@ describe('createReport y endpoint POST /api/reports', () => {
   it('persiste el reporte cuando el colaborador está autenticado y activo', async () => {
     const mockClient = buildMockSupabaseClient({
       userId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
-      profile: { id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', is_active: true },
+      profile: {
+        id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+        is_active: true,
+        role_code: 'collaborator',
+      },
     });
 
     const created = await createReport(
@@ -224,6 +228,14 @@ describe('createReport y endpoint POST /api/reports', () => {
       createReport(VALID_BODY, 'token', inactiveClient),
     ).rejects.toMatchObject({ status: 403 });
 
+    const wrongRoleClient = buildMockSupabaseClient({
+      userId: 'u1',
+      profile: { id: 'u1', is_active: true, role_code: 'developer' },
+    });
+    await expect(
+      createReport(VALID_BODY, 'token', wrongRoleClient),
+    ).rejects.toMatchObject({ status: 403, code: 'FORBIDDEN_ROLE' });
+
     const profileErrorClient = buildMockSupabaseClient({
       userId: 'u1',
       profileError: true,
@@ -234,7 +246,7 @@ describe('createReport y endpoint POST /api/reports', () => {
 
     const insertErrorClient = buildMockSupabaseClient({
       userId: 'u1',
-      profile: { id: 'u1', is_active: true },
+      profile: { id: 'u1', is_active: true, role_code: 'collaborator' },
       insertError: true,
     });
     await expect(

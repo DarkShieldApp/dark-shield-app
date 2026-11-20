@@ -16,7 +16,7 @@ export interface FakeError {
 export interface FakeSupabaseConfig {
   user?: { id: string } | null;
   authError?: boolean;
-  profile?: { id: string; is_active: boolean } | null;
+  profile?: { id: string; is_active: boolean; role_code?: string } | null;
   profileError?: boolean;
   report?: { id: string } | null;
   reportError?: boolean;

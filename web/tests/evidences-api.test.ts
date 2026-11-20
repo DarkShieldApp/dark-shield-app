@@ -51,7 +51,7 @@ beforeAll(async () => {
 function setup(config: FakeSupabaseConfig = {}) {
   const fake = createFakeSupabase({
     user: { id: USER },
-    profile: { id: USER, is_active: true },
+    profile: { id: USER, is_active: true, role_code: 'collaborator' },
     report: { id: REPORT },
     ...config,
   });
@@ -156,6 +156,29 @@ describe('autenticación y acceso (401, 403, 404)', () => {
         ),
       ),
     ).toMatchObject({ status: 403, code: 'FORBIDDEN_INACTIVE_PROFILE' });
+  });
+
+  it('rechaza la subida y confirmación de roles distintos a colaborador', async () => {
+    const { options } = setup({
+      profile: { id: USER, is_active: true, role_code: 'developer' },
+    });
+
+    expect(
+      await errorOf(
+        requestEvidenceUploads(
+          { reportId: REPORT, accessToken: TOKEN, readBody: body({}) },
+          options,
+        ),
+      ),
+    ).toMatchObject({ status: 403, code: 'FORBIDDEN_ROLE' });
+    expect(
+      await errorOf(
+        confirmEvidence(
+          { reportId: REPORT, accessToken: TOKEN, readBody: body({}) },
+          options,
+        ),
+      ),
+    ).toMatchObject({ status: 403, code: 'FORBIDDEN_ROLE' });
   });
 
   it('un perfil inactivo puede seguir leyendo lo que la RLS le permite', async () => {

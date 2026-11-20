@@ -203,6 +203,7 @@ describe('errores y reintento', () => {
   it.each([
     [401, 'UNAUTHENTICATED', false],
     [403, 'FORBIDDEN_INACTIVE_PROFILE', false],
+    [403, 'FORBIDDEN_ROLE', false],
     [404, 'REPORT_NOT_FOUND', false],
     [503, 'SERVICE_UNAVAILABLE', true],
     [500, 'EVIDENCE_STORAGE_FAILED', true],

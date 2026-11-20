@@ -121,6 +121,7 @@ Todas las respuestas de error siguen una estructura uniforme con un código esta
 |    `401`    | `UNAUTHENTICATED`            | No se proporcionó la cabecera `Authorization: Bearer <token>`.                                               |
 |    `401`    | `INVALID_SESSION`            | El token proporcionado es inválido o ha expirado.                                                            |
 |    `403`    | `FORBIDDEN_INACTIVE_PROFILE` | El usuario autenticado no tiene perfil activo (`is_active = false`).                                         |
+|    `403`    | `FORBIDDEN_ROLE`             | El perfil activo no tiene el rol `collaborator`.                                                             |
 |    `500`    | `PROFILE_LOOKUP_FAILED`      | Error interno al consultar el perfil del colaborador en Supabase.                                            |
 |    `500`    | `REPORT_PERSISTENCE_FAILED`  | Error interno al insertar el reporte en `public.reports`.                                                    |
 |    `503`    | `SERVICE_UNAVAILABLE`        | Faltan las variables de entorno de conexión con Supabase en el servidor.                                     |

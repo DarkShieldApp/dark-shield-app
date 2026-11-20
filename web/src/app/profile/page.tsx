@@ -1,5 +1,6 @@
 import type { ProfileData } from './profile-data';
 import ProfileView from './profile-view';
+import CollaboratorGuard from '../../components/CollaboratorGuard';
 
 // HU-10/T3: Profile page with temporary development data.
 // Real authenticated data will be integrated with HU-11.
@@ -21,5 +22,9 @@ const exampleData: ProfileData = {
 };
 
 export default function ProfilePage() {
-  return <ProfileView data={exampleData} />;
+  return (
+    <CollaboratorGuard>
+      <ProfileView data={exampleData} />
+    </CollaboratorGuard>
+  );
 }

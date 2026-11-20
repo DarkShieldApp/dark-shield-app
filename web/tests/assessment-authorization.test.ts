@@ -112,7 +112,7 @@ it('denies trust below the minimum', async () => {
 });
 
 it.each(['collaborator', 'developer', 'admin'])(
-  'checks the permission independently of role %s',
+  'requires the collaborator role and its permission (%s)',
   async (role) => {
     maybeSingle.mockResolvedValue({
       data: profile({ role_code: role }),
@@ -122,7 +122,8 @@ it.each(['collaborator', 'developer', 'admin'])(
       data: { roleCode: role, permissions: ['assessments.submit'] },
       error: null,
     });
-    expect((await checkAssessmentAuthorization(bearer)).allowed).toBe(true);
+    const authorization = await checkAssessmentAuthorization(bearer);
+    expect(authorization.allowed).toBe(role === 'collaborator');
     rpc.mockResolvedValue({
       data: { roleCode: role, permissions: ['reports.create'] },
       error: null,

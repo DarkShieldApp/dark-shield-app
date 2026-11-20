@@ -1,4 +1,5 @@
 import { isEmailIdentifier, normalizeUsername } from '../auth/username';
+import { getSafeReturnPath } from '../auth/return-path';
 import { createBrowserSupabaseClient } from './client';
 
 type PasswordAuthClient = {
@@ -56,14 +57,20 @@ export async function registerWithPassword(
     throw new Error('Usa un nombre de usuario de 3 a 30 letras, números o _.');
   }
 
+  const redirectTo = new URL('/login?emailConfirmed=1', window.location.origin);
+  const returnPath = getSafeReturnPath(
+    new URLSearchParams(window.location.search).get('next'),
+    window.location.origin,
+  );
+  if (returnPath) {
+    redirectTo.searchParams.set('next', returnPath);
+  }
+
   const { error } = await client.auth.signUp({
     email: email.trim(),
     password,
     options: {
-      emailRedirectTo: new URL(
-        '/login?emailConfirmed=1',
-        window.location.origin,
-      ).toString(),
+      emailRedirectTo: redirectTo.toString(),
       data: { username: normalizedUsername },
     },
   });
