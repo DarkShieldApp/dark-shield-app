@@ -24,7 +24,7 @@ interface ReportSummaryCardProps {
 /**
  * Resumen de un reporte en el listado de una página (HU-01/T6). Muestra solo
  * campos públicos y el estado de credibilidad como texto (HU-01/T7), con el
- * aviso de que es dinámico; sin puntuación ni factores (HU-09/T3).
+ * aviso de que es dinámico y una explicación agregada de los factores (HU-09/T3).
  */
 export function ReportSummaryCard({
   report,
@@ -67,9 +67,93 @@ export function ReportSummaryCard({
               {view.credibility.label}
             </span>
             {view.credibility.status !== 'unavailable' && (
-              <span className={styles.credibilityNotice}>
-                {CREDIBILITY_DYNAMIC_NOTICE}
-              </span>
+              <>
+                <span className={styles.credibilityNotice}>
+                  {CREDIBILITY_DYNAMIC_NOTICE}
+                </span>
+                <details className={styles.credibilityDetails}>
+                  <summary>Cómo se calcula</summary>
+                  {report.credibility?.factors ? (
+                    <>
+                      <p className={styles.factorsIntro}>
+                        El nivel combina evidencias visibles y valoraciones de
+                        personas activas. No se muestran identidades ni niveles
+                        individuales de confianza.
+                      </p>
+                      <dl className={styles.factorsList}>
+                        <div>
+                          <dt>Evidencias visibles</dt>
+                          <dd>{report.credibility.factors.visibleEvidences}</dd>
+                          <small>
+                            Cada una aporta 0,25 de apoyo; el conjunto tiene un
+                            máximo de 1,00.
+                          </small>
+                        </div>
+                        <div>
+                          <dt>Validaciones</dt>
+                          <dd>{report.credibility.factors.validations}</dd>
+                          <small>
+                            Se ponderan por la confianza actual de cada persona
+                            valoradora.
+                          </small>
+                        </div>
+                        <div>
+                          <dt>Invalidaciones</dt>
+                          <dd>{report.credibility.factors.invalidations}</dd>
+                          <small>
+                            Se ponderan por la confianza actual de cada persona
+                            valoradora.
+                          </small>
+                        </div>
+                        <div>
+                          <dt>Personas valoradoras</dt>
+                          <dd>{report.credibility.factors.assessors}</dd>
+                          <small>
+                            Cuenta la última valoración de cada persona activa;
+                            no cuenta la del autor del reporte.
+                          </small>
+                        </div>
+                        <div>
+                          <dt>Peso a favor</dt>
+                          <dd>
+                            {report.credibility.factors.supportWeight.toLocaleString(
+                              'es-ES',
+                              {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              },
+                            )}
+                          </dd>
+                          <small>
+                            Suma el apoyo de evidencias y validaciones
+                            ponderadas.
+                          </small>
+                        </div>
+                        <div>
+                          <dt>Peso en contra</dt>
+                          <dd>
+                            {report.credibility.factors.againstWeight.toLocaleString(
+                              'es-ES',
+                              {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              },
+                            )}
+                          </dd>
+                          <small>
+                            Suma el peso de las invalidaciones ponderadas.
+                          </small>
+                        </div>
+                      </dl>
+                    </>
+                  ) : (
+                    <p className={styles.factorsIntro}>
+                      El desglose de factores no está disponible para este
+                      reporte.
+                    </p>
+                  )}
+                </details>
+              </>
             )}
           </dd>
         </div>

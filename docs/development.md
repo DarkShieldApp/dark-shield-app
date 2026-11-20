@@ -103,6 +103,7 @@ declaraciones `.d.ts` dentro de ese ámbito. Actualmente son:
 - `src/lib/supabase/session.ts`: token de la sesión del cliente de Supabase para la API.
 - `src/lib/reports/rules.ts`: validación del borrador de creación (HU-05/T5).
 - `src/lib/reports/validation.ts`, `src/lib/reports/query.ts` y `src/server/reports.ts`: contratos, validación, creación y búsqueda de reportes.
+- `src/components/ReportSummaryCard.tsx`: desglose accesible de factores de credibilidad (HU-09/T3), probado mediante renderizado estático con cobertura por archivo.
 - `src/server/supabase.ts`, `session.ts` y `authorization.ts`: cliente por petición, verificación Bearer y operaciones de permisos.
 - `src/server/evidences.ts`: endpoints de evidencias, autorización y compensación (HU-06/T4).
 - `src/server/evidence-images.ts`: recodificación de evidencias con `sharp` para eliminar metadatos (HU-06/T4).
