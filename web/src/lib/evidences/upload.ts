@@ -37,6 +37,10 @@ export const EVIDENCE_UPLOAD_MESSAGES = {
   UNAUTHENTICATED: 'Inicia sesión como colaborador para aportar evidencias.',
   FORBIDDEN_INACTIVE_PROFILE:
     'Tu cuenta de colaborador no está activa para aportar evidencias.',
+  FORBIDDEN_ROLE:
+    'Solo las cuentas con rol de colaborador pueden aportar evidencias.',
+  FORBIDDEN_MISSING_PERMISSION:
+    'Tu cuenta no tiene permiso para aportar evidencias.',
   REPORT_NOT_FOUND: 'El reporte no existe o ya no está disponible.',
   EVIDENCE_DUPLICATE: 'Esta imagen ya forma parte del reporte.',
   SERVICE_UNAVAILABLE:
@@ -84,7 +88,12 @@ function fromResponse(
   if (code === 'EVIDENCE_REJECTED' && detail)
     return failure(detail.code, false);
   if (status === 401) return failure('UNAUTHENTICATED', false);
-  if (status === 403) return failure('FORBIDDEN_INACTIVE_PROFILE', false);
+  if (status === 403) {
+    if (code === 'FORBIDDEN_ROLE' || code === 'FORBIDDEN_MISSING_PERMISSION') {
+      return failure(code, false);
+    }
+    return failure('FORBIDDEN_INACTIVE_PROFILE', false);
+  }
   if (status === 404) return failure('REPORT_NOT_FOUND', false);
   if (status === 409) return failure('EVIDENCE_DUPLICATE', false);
   if (status >= 500) return failure(code ?? 'SERVER_ERROR', true);

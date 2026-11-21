@@ -43,6 +43,7 @@ import {
   type QueryFailure,
   type ReportSearchQuery,
 } from '../lib/reports/search';
+import CollaboratorGuard from '../components/CollaboratorGuard';
 import { ReportSummaryCard } from '../components/ReportSummaryCard';
 
 type Section = 'consulta' | 'crear' | 'evidencias';
@@ -599,227 +600,233 @@ export default function Dashboard() {
           )}
 
           {section === 'crear' && (
-            <>
-              <section className={styles.formCard}>
-                <div className={styles.cardHeading}>
-                  <div className={styles.stepBadge}>01</div>
-                  <div>
-                    <h2>Describe tu experiencia</h2>
-                    <p>Cuéntale a la comunidad qué ocurrió en esta página.</p>
+            <CollaboratorGuard>
+              <>
+                <section className={styles.formCard}>
+                  <div className={styles.cardHeading}>
+                    <div className={styles.stepBadge}>01</div>
+                    <div>
+                      <h2>Describe tu experiencia</h2>
+                      <p>Cuéntale a la comunidad qué ocurrió en esta página.</p>
+                    </div>
                   </div>
+                  <form className={styles.reportForm} onSubmit={submitReport}>
+                    <label>
+                      URL de la página <span>OBLIGATORIO</span>
+                      <input
+                        value={draft.pageUrl}
+                        onChange={(e) =>
+                          setDraft({ ...draft, pageUrl: e.target.value })
+                        }
+                        placeholder="https://ejemplo.com/checkout"
+                      />
+                    </label>
+                    <label>
+                      Tipo de patrón <span>OBLIGATORIO</span>
+                      <select
+                        value={draft.pattern}
+                        onChange={(e) =>
+                          setDraft({ ...draft, pattern: e.target.value })
+                        }
+                      >
+                        <option value="">
+                          Selecciona el patrón que observaste
+                        </option>
+                        <option>Costes ocultos</option>
+                        <option>Interferencia visual</option>
+                        <option>Urgencia artificial</option>
+                        <option>Suscripción difícil de cancelar</option>
+                        <option>Otro patrón</option>
+                      </select>
+                    </label>
+                    <label>
+                      ¿Qué sucedió? <span>OBLIGATORIO</span>
+                      <textarea
+                        rows={5}
+                        maxLength={2000}
+                        value={draft.description}
+                        onChange={(e) =>
+                          setDraft({ ...draft, description: e.target.value })
+                        }
+                        placeholder="Describe los pasos que seguiste y qué te resultó confuso o inesperado…"
+                      />
+                      <small>
+                        Entre 20 y 2000 caracteres. Evita incluir datos
+                        personales.
+                      </small>
+                    </label>
+                    <div className={styles.formActions}>
+                      <button
+                        type="button"
+                        className={styles.secondaryButton}
+                        onClick={() => setSection('evidencias')}
+                      >
+                        Añadir evidencias <span>↗</span>
+                      </button>
+                      <button className={styles.primaryButton} type="submit">
+                        Revisar borrador <span>→</span>
+                      </button>
+                    </div>
+                    {feedback && (
+                      <p
+                        className={
+                          feedback.startsWith('Borrador')
+                            ? styles.success
+                            : styles.error
+                        }
+                        role="status"
+                      >
+                        {feedback}
+                      </p>
+                    )}
+                  </form>
+                </section>
+                <div className={styles.notice}>
+                  <span>ⓘ</span>
+                  <p>
+                    El formulario comprueba el borrador en tu navegador. El
+                    envío y la publicación requieren una API que aún está
+                    pendiente.
+                  </p>
                 </div>
-                <form className={styles.reportForm} onSubmit={submitReport}>
-                  <label>
-                    URL de la página <span>OBLIGATORIO</span>
+              </>
+            </CollaboratorGuard>
+          )}
+
+          {section === 'evidencias' && (
+            <CollaboratorGuard>
+              <>
+                <section className={styles.formCard}>
+                  <div className={styles.cardHeading}>
+                    <div className={styles.stepBadge}>02</div>
+                    <div>
+                      <h2>Adjunta archivos de apoyo</h2>
+                      <p>
+                        Las capturas ayudan a entender el contexto del reporte.
+                      </p>
+                    </div>
+                  </div>
+                  <label className={styles.uploadZone}>
                     <input
-                      value={draft.pageUrl}
-                      onChange={(e) =>
-                        setDraft({ ...draft, pageUrl: e.target.value })
-                      }
-                      placeholder="https://ejemplo.com/checkout"
+                      type="file"
+                      accept={ACCEPTED_TYPES}
+                      multiple
+                      disabled={busy}
+                      onChange={selectFiles}
                     />
-                  </label>
-                  <label>
-                    Tipo de patrón <span>OBLIGATORIO</span>
-                    <select
-                      value={draft.pattern}
-                      onChange={(e) =>
-                        setDraft({ ...draft, pattern: e.target.value })
-                      }
-                    >
-                      <option value="">
-                        Selecciona el patrón que observaste
-                      </option>
-                      <option>Costes ocultos</option>
-                      <option>Interferencia visual</option>
-                      <option>Urgencia artificial</option>
-                      <option>Suscripción difícil de cancelar</option>
-                      <option>Otro patrón</option>
-                    </select>
-                  </label>
-                  <label>
-                    ¿Qué sucedió? <span>OBLIGATORIO</span>
-                    <textarea
-                      rows={5}
-                      maxLength={2000}
-                      value={draft.description}
-                      onChange={(e) =>
-                        setDraft({ ...draft, description: e.target.value })
-                      }
-                      placeholder="Describe los pasos que seguiste y qué te resultó confuso o inesperado…"
-                    />
+                    <span className={styles.uploadIcon}>↑</span>
+                    <b>
+                      Arrastra archivos aquí o <u>explora tu dispositivo</u>
+                    </b>
                     <small>
-                      Entre 20 y 2000 caracteres. Evita incluir datos
-                      personales.
+                      PNG, JPG o WEBP · hasta {EVIDENCE_MAX_FILES} archivos ·{' '}
+                      {EVIDENCE_MAX_FILE_BYTES / (1024 * 1024)} MB por archivo
                     </small>
                   </label>
+                  {fileNotice && (
+                    <p className={styles.error} role="status">
+                      {fileNotice}
+                    </p>
+                  )}
+                  {selection.items.length > 0 && (
+                    <div className={styles.fileList}>
+                      <div className={styles.filesHeading}>
+                        <b>
+                          Archivos seleccionados{' '}
+                          <span>{selection.items.length}</span>
+                        </b>
+                        <small>
+                          {(fileSummary / (1024 * 1024)).toFixed(2)} MB en total
+                        </small>
+                      </div>
+                      {selection.items.map((item) => {
+                        const { key, file } = item;
+                        const state = uploads[key];
+                        const status = statusOf(item);
+                        const preview = previews[key];
+                        return (
+                          <div className={styles.fileRow} key={key}>
+                            {preview && (
+                              <Image
+                                src={preview}
+                                alt={`Vista previa de ${file.name}`}
+                                width={39}
+                                height={39}
+                                unoptimized
+                              />
+                            )}
+                            <div className={styles.fileDetails}>
+                              <b>{file.name}</b>
+                              <small
+                                className={
+                                  status.error ? styles.error : undefined
+                                }
+                                role={status.error ? 'alert' : 'status'}
+                              >
+                                {(file.size / 1024).toFixed(0)} KB ·{' '}
+                                {status.text}
+                              </small>
+                            </div>
+                            {state?.phase === 'error' &&
+                              state.error.retryable && (
+                                <button
+                                  className={styles.secondaryButton}
+                                  type="button"
+                                  disabled={busy}
+                                  onClick={() => send([item])}
+                                >
+                                  Reintentar
+                                </button>
+                              )}
+                            <span className={styles.localTag}>
+                              {state?.phase === 'done'
+                                ? 'Guardada'
+                                : isBusy(state)
+                                  ? 'Subiendo'
+                                  : 'Local'}
+                            </span>
+                            <button
+                              className={styles.removeButton}
+                              type="button"
+                              aria-label={`Quitar ${file.name}`}
+                              disabled={isBusy(state)}
+                              onClick={() => removeFile(key)}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                   <div className={styles.formActions}>
                     <button
                       type="button"
                       className={styles.secondaryButton}
-                      onClick={() => setSection('evidencias')}
+                      onClick={() => setSection('crear')}
                     >
-                      Añadir evidencias <span>↗</span>
+                      ← Volver al reporte
                     </button>
-                    <button className={styles.primaryButton} type="submit">
-                      Revisar borrador <span>→</span>
+                    <button
+                      type="button"
+                      className={styles.primaryButton}
+                      disabled={!reportId || busy || pending.length === 0}
+                      onClick={() => send(pending)}
+                    >
+                      {busy ? 'Subiendo…' : 'Subir evidencias'}
                     </button>
                   </div>
-                  {feedback && (
-                    <p
-                      className={
-                        feedback.startsWith('Borrador')
-                          ? styles.success
-                          : styles.error
-                      }
-                      role="status"
-                    >
-                      {feedback}
-                    </p>
-                  )}
-                </form>
-              </section>
-              <div className={styles.notice}>
-                <span>ⓘ</span>
-                <p>
-                  El formulario comprueba el borrador en tu navegador. El envío
-                  y la publicación requieren una API que aún está pendiente.
-                </p>
-              </div>
-            </>
-          )}
-
-          {section === 'evidencias' && (
-            <>
-              <section className={styles.formCard}>
-                <div className={styles.cardHeading}>
-                  <div className={styles.stepBadge}>02</div>
-                  <div>
-                    <h2>Adjunta archivos de apoyo</h2>
-                    <p>
-                      Las capturas ayudan a entender el contexto del reporte.
-                    </p>
-                  </div>
-                </div>
-                <label className={styles.uploadZone}>
-                  <input
-                    type="file"
-                    accept={ACCEPTED_TYPES}
-                    multiple
-                    disabled={busy}
-                    onChange={selectFiles}
-                  />
-                  <span className={styles.uploadIcon}>↑</span>
-                  <b>
-                    Arrastra archivos aquí o <u>explora tu dispositivo</u>
-                  </b>
-                  <small>
-                    PNG, JPG o WEBP · hasta {EVIDENCE_MAX_FILES} archivos ·{' '}
-                    {EVIDENCE_MAX_FILE_BYTES / (1024 * 1024)} MB por archivo
-                  </small>
-                </label>
-                {fileNotice && (
-                  <p className={styles.error} role="status">
-                    {fileNotice}
+                </section>
+                <div className={styles.notice}>
+                  <span>ⓘ</span>
+                  <p>
+                    {reportId
+                      ? 'Los archivos se suben directamente al almacenamiento privado. El servidor comprueba cada uno y elimina sus metadatos (EXIF y ubicación GPS) antes de guardarlo. Necesitas haber iniciado sesión como colaborador.'
+                      : 'Abre esta sección desde un reporte para aportar evidencias: falta el identificador del reporte (?reporte=…).'}
                   </p>
-                )}
-                {selection.items.length > 0 && (
-                  <div className={styles.fileList}>
-                    <div className={styles.filesHeading}>
-                      <b>
-                        Archivos seleccionados{' '}
-                        <span>{selection.items.length}</span>
-                      </b>
-                      <small>
-                        {(fileSummary / (1024 * 1024)).toFixed(2)} MB en total
-                      </small>
-                    </div>
-                    {selection.items.map((item) => {
-                      const { key, file } = item;
-                      const state = uploads[key];
-                      const status = statusOf(item);
-                      const preview = previews[key];
-                      return (
-                        <div className={styles.fileRow} key={key}>
-                          {preview && (
-                            <Image
-                              src={preview}
-                              alt={`Vista previa de ${file.name}`}
-                              width={39}
-                              height={39}
-                              unoptimized
-                            />
-                          )}
-                          <div className={styles.fileDetails}>
-                            <b>{file.name}</b>
-                            <small
-                              className={
-                                status.error ? styles.error : undefined
-                              }
-                              role={status.error ? 'alert' : 'status'}
-                            >
-                              {(file.size / 1024).toFixed(0)} KB · {status.text}
-                            </small>
-                          </div>
-                          {state?.phase === 'error' &&
-                            state.error.retryable && (
-                              <button
-                                className={styles.secondaryButton}
-                                type="button"
-                                disabled={busy}
-                                onClick={() => send([item])}
-                              >
-                                Reintentar
-                              </button>
-                            )}
-                          <span className={styles.localTag}>
-                            {state?.phase === 'done'
-                              ? 'Guardada'
-                              : isBusy(state)
-                                ? 'Subiendo'
-                                : 'Local'}
-                          </span>
-                          <button
-                            className={styles.removeButton}
-                            type="button"
-                            aria-label={`Quitar ${file.name}`}
-                            disabled={isBusy(state)}
-                            onClick={() => removeFile(key)}
-                          >
-                            ×
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-                <div className={styles.formActions}>
-                  <button
-                    type="button"
-                    className={styles.secondaryButton}
-                    onClick={() => setSection('crear')}
-                  >
-                    ← Volver al reporte
-                  </button>
-                  <button
-                    type="button"
-                    className={styles.primaryButton}
-                    disabled={!reportId || busy || pending.length === 0}
-                    onClick={() => send(pending)}
-                  >
-                    {busy ? 'Subiendo…' : 'Subir evidencias'}
-                  </button>
                 </div>
-              </section>
-              <div className={styles.notice}>
-                <span>ⓘ</span>
-                <p>
-                  {reportId
-                    ? 'Los archivos se suben directamente al almacenamiento privado. El servidor comprueba cada uno y elimina sus metadatos (EXIF y ubicación GPS) antes de guardarlo. Necesitas haber iniciado sesión como colaborador.'
-                    : 'Abre esta sección desde un reporte para aportar evidencias: falta el identificador del reporte (?reporte=…).'}
-                </p>
-              </div>
-            </>
+              </>
+            </CollaboratorGuard>
           )}
         </div>
       </section>

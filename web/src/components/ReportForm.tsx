@@ -9,6 +9,7 @@ import {
   type ReportFormInput,
   type ReportValidationErrors,
 } from '../lib/reports/validation';
+import { getAccessToken } from '../lib/supabase/session';
 
 interface ApiReportResponse {
   report?: {
@@ -105,10 +106,19 @@ export function ReportForm() {
 
     setIsSubmitting(true);
     try {
+      const accessToken = await getAccessToken();
+      if (!accessToken) {
+        setServerError(
+          'Inicia sesión con una cuenta colaboradora para enviar el reporte.',
+        );
+        return;
+      }
+
       const response = await fetch('/api/reports', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
         },
         body: JSON.stringify(values),
       });

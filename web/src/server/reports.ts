@@ -222,7 +222,7 @@ export async function createReport(
 
   const { data: profile, error: profileError } = await client
     .from('profiles')
-    .select('id, is_active')
+    .select('id, is_active, role_code')
     .eq('id', userId)
     .maybeSingle();
 
@@ -239,6 +239,14 @@ export async function createReport(
       403,
       'FORBIDDEN_INACTIVE_PROFILE',
       'Tu cuenta de colaborador no está activa para crear reportes.',
+    );
+  }
+
+  if (profile.role_code !== 'collaborator') {
+    throw new ReportApiError(
+      403,
+      'FORBIDDEN_ROLE',
+      'Solo las cuentas con rol de colaborador pueden registrar reportes.',
     );
   }
 

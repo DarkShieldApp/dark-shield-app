@@ -23,11 +23,18 @@ el [contrato de consulta](../domain-design.md) y la [API de autorización](autho
 | **Método HTTP**          | `POST`                                                                                                     |
 | **Ruta**                 | `/api/reports`                                                                                             |
 | **Autenticación**        | Obligatoria mediante cabecera `Authorization: Bearer <access_token>` (token JWT emitido por Supabase Auth) |
-| **Perfil requerido**     | Usuario autenticado con fila activa (`is_active = true`) en `public.profiles`                              |
+| **Perfil requerido**     | Usuario autenticado con fila activa (`is_active = true`) y rol `collaborator` en `public.profiles`         |
 | **Formato de petición**  | `application/json`                                                                                         |
 | **Formato de respuesta** | `application/json`                                                                                         |
 
 ---
+
+La creación requiere sesión y perfil activo con rol `collaborator`; la ruta
+`POST` valida además la identidad y no acepta `author_id` desde el cuerpo. La
+tabla `public.reports` mantiene revocados los permisos de escritura y no tiene
+política de inserción. Por tanto, la inserción seguirá denegada por RLS hasta
+que se revise y aplique una migración de permisos y política; esta PR no la
+aplica.
 
 ## 2. Cabeceras HTTP esperadas
 
@@ -121,6 +128,7 @@ Todas las respuestas de error siguen una estructura uniforme con un código esta
 |    `401`    | `UNAUTHENTICATED`            | No se proporcionó la cabecera `Authorization: Bearer <token>`.                                               |
 |    `401`    | `INVALID_SESSION`            | El token proporcionado es inválido o ha expirado.                                                            |
 |    `403`    | `FORBIDDEN_INACTIVE_PROFILE` | El usuario autenticado no tiene perfil activo (`is_active = false`).                                         |
+|    `403`    | `FORBIDDEN_ROLE`             | El perfil activo no tiene el rol `collaborator`.                                                             |
 |    `500`    | `PROFILE_LOOKUP_FAILED`      | Error interno al consultar el perfil del colaborador en Supabase.                                            |
 |    `500`    | `REPORT_PERSISTENCE_FAILED`  | Error interno al insertar el reporte en `public.reports`.                                                    |
 |    `503`    | `SERVICE_UNAVAILABLE`        | Faltan las variables de entorno de conexión con Supabase en el servidor.                                     |

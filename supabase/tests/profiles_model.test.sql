@@ -5,23 +5,27 @@ select no_plan();
 
 select has_table('public', 'profiles', 'Profiles exists');
 select columns_are('public', 'profiles', array[
-  'id', 'display_name', 'trust_level', 'is_active', 'created_at', 'updated_at', 'role_code'
-], 'Only the agreed domain attributes exist');
+  'id', 'display_name', 'trust_level', 'is_active', 'created_at', 'updated_at',
+  'role_code', 'username'
+], 'Only the agreed profile attributes exist');
 select col_type_is('public', 'profiles', 'id', 'uuid', 'Column contract: id');
 select col_type_is('public', 'profiles', 'display_name', 'text', 'Column contract: display_name');
 select col_type_is('public', 'profiles', 'trust_level', 'smallint', 'Column contract: trust_level');
 select col_type_is('public', 'profiles', 'is_active', 'boolean', 'Column contract: is_active');
 select col_type_is('public', 'profiles', 'created_at', 'timestamp with time zone', 'Column contract: created_at');
 select col_type_is('public', 'profiles', 'updated_at', 'timestamp with time zone', 'Column contract: updated_at');
+select col_type_is('public', 'profiles', 'username', 'text', 'Column contract: username');
 select col_is_pk('public', 'profiles', 'id', 'Column contract: id');
 select fk_ok('public', 'profiles', 'id', 'auth', 'users', 'id');
 select col_is_null('public', 'profiles', 'display_name', 'Column contract: display_name');
+select col_is_null('public', 'profiles', 'username', 'Column contract: username');
 select col_not_null('public', 'profiles', 'id', 'Column contract: id');
 select col_not_null('public', 'profiles', 'trust_level', 'Column contract: trust_level');
 select col_not_null('public', 'profiles', 'is_active', 'Column contract: is_active');
 select col_not_null('public', 'profiles', 'created_at', 'Column contract: created_at');
 select col_not_null('public', 'profiles', 'updated_at', 'Column contract: updated_at');
 select col_hasnt_default('public', 'profiles', 'id', 'Column contract: id');
+select col_hasnt_default('public', 'profiles', 'username', 'Column contract: username');
 select col_default_is('public', 'profiles', 'trust_level', '1', 'Column contract: trust_level');
 select col_default_is('public', 'profiles', 'is_active', 'true', 'Column contract: is_active');
 select col_default_is('public', 'profiles', 'created_at', 'now()', 'Column contract: created_at');
@@ -33,6 +37,29 @@ insert into auth.users (id, raw_user_meta_data) values
    '{"display_name":"UNTRUSTED", "trust_level":100, "is_active":false}');
 select is((select count(*) from public.profiles where id = 'a1111111-1111-4111-8111-111111111111'),
   1::bigint, 'Auth creates exactly one profile with the shared UUID');
+insert into auth.users (id, raw_user_meta_data) values
+  ('a3333333-3333-4333-8333-333333333333', '{"username":"@Example"}');
+select is((select username from public.profiles
+  where id = 'a3333333-3333-4333-8333-333333333333'),
+  'example', 'Auth normalizes and stores the requested username');
+select throws_ok($$insert into auth.users (id, raw_user_meta_data) values
+  ('a4444444-4444-4444-8444-444444444444', '{"username":"@Example"}')$$,
+  '23505', null, 'Duplicate usernames are rejected');
+create temporary table username_updated_before as
+  select id, updated_at from public.profiles
+  where id = 'a3333333-3333-4333-8333-333333333333';
+update auth.users
+set raw_user_meta_data = '{"username":"@Updated"}'
+where id = 'a3333333-3333-4333-8333-333333333333';
+select is((select username from public.profiles
+  where id = 'a3333333-3333-4333-8333-333333333333'),
+  'updated', 'Auth metadata changes synchronize the profile username');
+select ok((select p.updated_at > b.updated_at
+  from public.profiles p join username_updated_before b using (id)),
+  'Changing the username advances the profile timestamp');
+select throws_ok($$insert into auth.users (id, raw_user_meta_data) values
+  ('a5555555-5555-4555-8555-555555555555', '{"username":"ab"}')$$,
+  '23514', null, 'Usernames shorter than three characters are rejected');
 select results_eq(
   $$select display_name, trust_level, is_active from public.profiles
     where id = 'a1111111-1111-4111-8111-111111111111'$$,

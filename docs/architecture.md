@@ -44,7 +44,7 @@ Cuando ambos clientes necesiten reutilizar un contrato, se podrá incorporar `pa
 ## Límites de integración y seguridad
 
 - El servidor concentrará las operaciones de negocio que requieran autorización, cálculo de confianza/credibilidad, moderación, control de abuso o coordinación con la IA.
-- Supabase Auth está adoptado. HU-11 resolverá sesiones en web y extensión, cookies SSR, verificación de identidad y renovación. Los handlers protegidos verifican Bearer con Auth. HU-06 implementa la subida firmada, confirmación y consulta de evidencias en Storage. Siguen pendientes el proxy SSR y CORS para la extensión.
+- Supabase Auth está adoptado. HU-11/T1–T3 implementa acceso por correo y sesión persistente en el navegador; T4 protegerá las rutas de colaborador. Los handlers protegidos verifican Bearer con Auth. Las cookies SSR y las sesiones de la extensión siguen pendientes. HU-06 implementa la subida firmada, confirmación y consulta de evidencias en Storage.
 - `auth.users` conserva la identidad y `public.profiles` sus datos de dominio con el mismo UUID. Un trigger privado crea el perfil sin copiar metadatos; la FK `ON DELETE RESTRICT` impide el borrado accidental en cascada. La lectura directa de perfiles se limita al propio activo. La RPC administrativa ofrece una proyección mínima paginada. `is_active` no revoca sesiones ni protege por sí solo futuras tablas o endpoints: deberán comprobarlo según sus requisitos.
 - No se colocarán claves privilegiadas de Supabase ni secretos de IA en el navegador, la extensión o variables expuestas al cliente. Las comprobaciones de permisos se harán en el servidor y, donde proceda, también en la base de datos.
 - La extensión no tiene actualmente `host_permissions` ni `content_scripts` en su versión de producción. Consultar la pestaña mediante una acción del usuario y observar la navegación en segundo plano presentan requisitos de permisos distintos; no se habilitará acceso global sin una necesidad justificada.
@@ -52,11 +52,12 @@ Cuando ambos clientes necesiten reutilizar un contrato, se podrá incorporar `pa
 
 ## Decisiones arquitectónicas
 
-La preparación utiliza `@supabase/supabase-js` sin estado. `@supabase/ssr` se
-incorporará en HU-11 junto con el flujo completo de cookies de App Router: su
-cliente de navegador persiste sesiones en cookies y no corresponde activarlo en
-esta intervención. No se utilizan los antiguos Auth Helpers. Las factorías no
-autentican peticiones ni ofrecen acceso autorizado a datos de usuario. Consultar
+La web utiliza `@supabase/supabase-js`: el cliente de navegador conserva la sesión
+para la interfaz y el cliente de servidor permanece sin estado. `@supabase/ssr` y
+el flujo de cookies de App Router podrán incorporarse si se requiere autenticación
+en Server Components. No se utilizan los antiguos Auth Helpers. Las factorías no
+autorizan por sí solas las peticiones; los handlers deben verificar el Bearer.
+Consultar
 los [ejemplos y límites](development.md#clientes-supabase).
 
 Las decisiones existentes se han extraído del antiguo `arquitectura.md` y separado por ámbito:

@@ -32,19 +32,20 @@ import { createServerSupabaseClient } from '@/server/supabase';
 ```
 
 Invocar dentro de la función que realiza la operación, nunca en el nivel superior
-del módulo. Cada llamada valida las variables y crea una instancia independiente.
+del módulo. Cada factoría valida las variables; el cliente de navegador es una
+instancia compartida para que sesión, renovación y token sean comunes a la interfaz.
 `config.ts` exige un origen HTTPS (HTTP solo para loopback local), sin rutas,
 credenciales, consulta ni fragmento, y una clave de formato `sb_publishable_...`.
 Rechaza claves secretas y JWT heredados; no verifica criptográficamente la clave
 ni que corresponda al proyecto. Los errores identifican la variable sin mostrar
 su valor. No hay cliente privilegiado.
 
-`client-only` y `server-only` delimitan los módulos para Next.js. Las factorías
-usan `@supabase/supabase-js` con `persistSession`, `autoRefreshToken` y
-`detectSessionInUrl` desactivados. El cliente de servidor puede enviar el Bearer recibido y verificarlo con Auth. HU-11 incorporará las utilidades de `@supabase/ssr` para App Router y resolverá el
-flujo completo de cookies, validación y renovación. El
-[cliente SSR de Supabase](https://github.com/supabase/ssr/blob/main/src/createBrowserClient.ts)
-persiste sesiones mediante cookies; por eso no se instala anticipadamente.
+`client-only` y `server-only` delimitan los módulos para Next.js. El cliente de
+navegador persiste la sesión en el almacenamiento del navegador, renueva tokens
+automáticamente y procesa los enlaces de correo; `AuthProvider` escucha
+`onAuthStateChange`. El cliente de servidor sigue sin estado y verifica el Bearer
+recibido. El uso de cookies SSR y la renovación de sesión en Server Components
+siguen fuera de este alcance.
 No hay Auth Helpers ni `proxy.ts`. La extensión seguirá utilizando la API web.
 
 ### Diagnóstico manual de conectividad

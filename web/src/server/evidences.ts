@@ -189,7 +189,7 @@ async function authorize(
   if (requireActiveProfile) {
     const { data: profile, error: profileError } = await client
       .from('profiles')
-      .select('id, is_active')
+      .select('id, is_active, role_code')
       .eq('id', userId)
       .maybeSingle();
     if (profileError) {
@@ -204,6 +204,13 @@ async function authorize(
         403,
         'FORBIDDEN_INACTIVE_PROFILE',
         'Tu cuenta de colaborador no está activa para aportar evidencias.',
+      );
+    }
+    if (profile.role_code !== 'collaborator') {
+      throw new EvidenceApiError(
+        403,
+        'FORBIDDEN_ROLE',
+        'Solo las cuentas con rol de colaborador pueden aportar evidencias.',
       );
     }
 

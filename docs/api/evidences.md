@@ -22,9 +22,9 @@ Contrato HTTP para aportar y consultar evidencias de un reporte (HU-06/T4). Las 
 
 **Autenticación:** obligatoria en los tres endpoints, con `Authorization: Bearer <access_token>` de Supabase Auth. El servidor valida el token con `supabase.auth.getUser(token)` y trabaja con un cliente sin privilegios: las consultas se ejecutan como `authenticated` bajo la RLS de la tabla y del _bucket_. No se usa `service_role` ni `@supabase/ssr` (mismo patrón que `POST /api/reports`).
 
-**Perfil y permiso:** subir y confirmar exigen un perfil activo y el permiso `evidences.add` (HU-06/CA1). Consultar solo exige sesión; la RLS decide qué se ve.
+**Perfil, rol y permiso:** subir y confirmar exigen un perfil activo, el rol `collaborator` y el permiso `evidences.add` (HU-11/T4 y HU-06/CA1). Consultar solo exige sesión; la RLS decide qué se ve.
 
-**Orden de las comprobaciones en los dos `POST`:** `401` sesión → `403 FORBIDDEN_INACTIVE_PROFILE` → `403 FORBIDDEN_MISSING_PERMISSION` → `404` reporte. El permiso se consulta con `rpc('my_permissions')` usando el mismo cliente autenticado de la petición (la RPC de HU-14/T3 deriva el sujeto de `auth.uid()` y lee la matriz vigente); se exige que `permissions` sea una lista de textos que incluya `evidences.add`. No se deduce de `role_code`.
+**Orden de las comprobaciones en los dos `POST`:** `401` sesión → `403 FORBIDDEN_INACTIVE_PROFILE` → `403 FORBIDDEN_ROLE` → `403 FORBIDDEN_MISSING_PERMISSION` → `404` reporte. El permiso se consulta con `rpc('my_permissions')` usando el mismo cliente autenticado de la petición (la RPC de HU-14/T3 deriva el sujeto de `auth.uid()` y lee la matriz vigente); se exige que `permissions` sea una lista de textos que incluya `evidences.add`. El rol se verifica además por separado; el permiso no se deduce de `role_code`.
 
 **Tipos y límites** (iguales en `rules.ts`, en el _bucket_ y en la tabla): solo `image/png`, `image/jpeg` e `image/webp`, sin PDF; hasta 10 MiB por archivo; como mucho 5 evidencias por colaborador y reporte, también las ocultas.
 
@@ -40,7 +40,7 @@ Authorization: Bearer <SUPABASE_ACCESS_TOKEN>
 { "files": [{ "name": "captura.png", "type": "image/png", "size": 48211 }] }
 ```
 
-- Antes de leer el cuerpo se comprueban la sesión, el perfil activo, el permiso `evidences.add` y el reporte, en ese orden. Sin el permiso (o con una respuesta de `my_permissions` mal formada) responde `403 FORBIDDEN_MISSING_PERMISSION` y no se firma ninguna URL de subida.
+- Antes de leer el cuerpo se comprueban la sesión, el perfil activo, el rol `collaborator`, el permiso `evidences.add` y el reporte, en ese orden. Sin el rol responde `403 FORBIDDEN_ROLE`; sin el permiso (o con una respuesta de `my_permissions` mal formada) responde `403 FORBIDDEN_MISSING_PERMISSION`; en ambos casos no se firma ninguna URL de subida.
 - `files`: de 1 a 5 archivos con `name` (texto), `type` (MIME declarado) y `size` (bytes).
 - Se valida lo declarado con `validateEvidenceDeclaration` (nombre, tamaño, tipo y coherencia entre extensión y MIME). La firma se comprueba en el paso 3 con los bytes reales.
 - Se comprueba que el colaborador no supere 5 evidencias en el reporte; el _trigger_ de la base de datos es la garantía final.
@@ -70,7 +70,7 @@ El cliente sube cada archivo con `supabase.storage.from('report-evidences').uplo
 { "uploadId": "58d5430a-…", "originalName": "captura.png" }
 ```
 
-Una evidencia por petición. Antes de nada se repiten las comprobaciones del paso 1, incluido el permiso `evidences.add`: si se revocó después de pedir la URL de subida, la confirmación responde `403 FORBIDDEN_MISSING_PERMISSION` sin descargar el objeto, sin registrar la fila y sin recalcular la credibilidad. Superadas las comprobaciones, el servidor:
+Una evidencia por petición. Antes de nada se repiten las comprobaciones del paso 1, incluido el rol y el permiso `evidences.add`: si se revoca el permiso después de pedir la URL de subida, la confirmación responde `403 FORBIDDEN_MISSING_PERMISSION` sin descargar el objeto, sin registrar la fila y sin recalcular la credibilidad. Superadas las comprobaciones, el servidor:
 
 1. Reconstruye la ruta del objeto a partir del usuario, el reporte, `uploadId` y la extensión canónica de `originalName` (`.jpg` para JPEG); nunca acepta una ruta del cliente.
 2. Descarga el objeto y lo valida con `validateEvidenceFile` usando su tamaño real, el MIME guardado y sus primeros bytes (_magic bytes_).
@@ -135,6 +135,7 @@ Formato común de la API: `{ "error": { "code", "message", "details"? } }`.
 | `400` | `EVIDENCE_UPLOAD_MISSING`                       | Se confirma una subida que no existe.                                                                                                                                             |
 | `401` | `UNAUTHENTICATED`                               | Token ausente, caducado o inválido. Mismo cuerpo siempre: «Sesión no válida o caducada.».                                                                                         |
 | `403` | `FORBIDDEN_INACTIVE_PROFILE`                    | Perfil inexistente o inactivo al subir o confirmar.                                                                                                                               |
+| `403` | `FORBIDDEN_ROLE`                                | El perfil activo no tiene el rol `collaborator`.                                                                                                                                  |
 | `403` | `FORBIDDEN_MISSING_PERMISSION`                  | Perfil activo sin el permiso `evidences.add` al subir o confirmar, o respuesta de `my_permissions` mal formada. Mensaje: «No tienes permiso para aportar evidencias.».            |
 | `404` | `REPORT_NOT_FOUND`                              | `reportId` mal formado, inexistente u oculto por la RLS: no se distingue «no existe» de «no es visible».                                                                          |
 | `409` | `EVIDENCE_DUPLICATE`                            | La misma imagen ya está asociada al reporte.                                                                                                                                      |
@@ -163,5 +164,5 @@ Ejemplo (`400 Bad Request`, _magic bytes_ falsos):
 
 - Limpieza periódica de subidas nunca confirmadas (objetos sin fila con más de 24 h): requiere un proceso con privilegios fuera de los handlers.
 - Moderación por administradores desde la aplicación: la RLS ya la permite, pero no hay endpoint. Cuando exista, tras cambiar `moderation_status` debe llamar a `recalculateReportCredibility(reportId, { cause: 'evidence_moderated', triggerId: evidenceId })` dentro de un `try/catch` que no cambie su respuesta, igual que el paso 6.
-- La RLS de `report_evidences` y las políticas del _bucket_ no consultan `evidences.add`: el permiso se aplica en los handlers, que es donde se obtiene la URL firmada de subida y donde se vuelve a comprobar al confirmar. Un cliente que llamara a Supabase directamente con su token seguiría sujeto solo a esas reglas.
+- La RLS de `report_evidences` y las políticas del _bucket_ aún no exigen el rol `collaborator` ni el permiso `evidences.add`: la API comprueba ambos antes de firmar la subida y vuelve a comprobarlos al confirmar. Un cliente que llamara directamente a Supabase con su token seguiría sujeto solo a las políticas actuales; hay que revisarlas y actualizarlas antes de considerar completa la protección en la capa de datos.
 - `POST /api/reports` usa todavía `INVALID_SESSION` para el token inválido; conviene alinearlo con el `401` único de esta API.

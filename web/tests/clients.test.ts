@@ -23,12 +23,33 @@ beforeEach(() => {
   );
 });
 
-describe.each([
-  ['navegador', createBrowserSupabaseClient],
-  ['servidor', createServerSupabaseClient],
-] as const)('cliente de %s', (_name, factory) => {
-  it('crea un cliente real sin persistencia, renovación, sesión ni red', async () => {
-    const client = factory();
+describe('cliente de navegador', () => {
+  it('persiste y renueva la sesión, procesa el callback y no accede a la red', async () => {
+    const client = createBrowserSupabaseClient();
+    expect(client).toBeInstanceOf(SupabaseClient);
+    expect(createClient).toHaveBeenCalledWith(url, key, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+      },
+    });
+    expect(await client.auth.getSession()).toEqual({
+      data: { session: null },
+      error: null,
+    });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('reutiliza una instancia para compartir la sesión', () => {
+    expect(createBrowserSupabaseClient()).toBe(createBrowserSupabaseClient());
+    expect(createClient).not.toHaveBeenCalled();
+  });
+});
+
+describe('cliente de servidor', () => {
+  it('crea un cliente aislado sin persistencia ni acceso a red', async () => {
+    const client = createServerSupabaseClient();
     expect(client).toBeInstanceOf(SupabaseClient);
     expect(createClient).toHaveBeenCalledWith(url, key, {
       auth: {
@@ -45,9 +66,9 @@ describe.each([
   });
 
   it('crea instancias independientes y revalida la configuración', () => {
-    expect(factory()).not.toBe(factory());
+    expect(createServerSupabaseClient()).not.toBe(createServerSupabaseClient());
     vi.stubEnv('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', undefined);
-    expect(() => factory()).toThrow(
+    expect(() => createServerSupabaseClient()).toThrow(
       'Falta NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY',
     );
     expect(createClient).toHaveBeenCalledTimes(2);
@@ -60,7 +81,7 @@ describe.each([
     ['NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', 'sb_secret_test_only'],
   ] as const)('rechaza %s=%s antes de invocar el SDK', (variable, value) => {
     vi.stubEnv(variable, value);
-    expect(() => factory()).toThrow(variable);
+    expect(() => createServerSupabaseClient()).toThrow(variable);
     expect(createClient).not.toHaveBeenCalled();
     expect(fetch).not.toHaveBeenCalled();
   });

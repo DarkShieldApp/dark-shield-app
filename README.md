@@ -98,8 +98,10 @@ y usar `npm ci` para reproducir la instalación. No crear lockfiles en cada apli
 
 Copiar `web/.env.example` a `web/.env` solo si este último no existe. Completar
 `NEXT_PUBLIC_SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` desde el proyecto
-Supabase creado manualmente. Usar una clave `sb_publishable_...`, nunca una clave
-privilegiada. El archivo local está excluido de Git; no sobrescribirlo al actualizar.
+Supabase creado manualmente. Para el acceso con nombre de usuario, completar también
+`SUPABASE_SECRET_KEY` con una clave `sb_secret_...`; es solo para el servidor y nunca
+debe llevar el prefijo `NEXT_PUBLIC_`. No usarla en el navegador. El archivo local está
+excluido de Git; no sobrescribirlo al actualizar.
 La plantilla de la extensión sigue siendo futura: la extensión accederá a la API web.
 
 La preparación de Supabase se explica en [supabase/README.md](supabase/README.md).

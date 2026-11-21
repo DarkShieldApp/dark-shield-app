@@ -28,8 +28,8 @@ const REPORT = 'c1111111-1111-4111-8111-111111111111';
 const UPLOAD = 'd1111111-1111-4111-8111-111111111111';
 const EVIDENCE = 'e1111111-1111-4111-8111-111111111111';
 const TOKEN = 'token-valido';
-const CONTRIBUTOR_PERMISSIONS = {
-  roleCode: 'contributor',
+const COLLABORATOR_PERMISSIONS = {
+  roleCode: 'collaborator',
   permissions: ['reports.create', 'evidences.add', 'assessments.submit'],
 };
 const UNAUTHENTICATED = {
@@ -56,8 +56,8 @@ beforeAll(async () => {
 function setup(config: FakeSupabaseConfig = {}) {
   const fake = createFakeSupabase({
     user: { id: USER },
-    profile: { id: USER, is_active: true },
-    permissions: CONTRIBUTOR_PERMISSIONS,
+    profile: { id: USER, is_active: true, role_code: 'collaborator' },
+    permissions: COLLABORATOR_PERMISSIONS,
     report: { id: REPORT },
     ...config,
   });
@@ -162,6 +162,30 @@ describe('autenticación y acceso (401, 403, 404)', () => {
         ),
       ),
     ).toMatchObject({ status: 403, code: 'FORBIDDEN_INACTIVE_PROFILE' });
+  });
+
+  it('rechaza la subida y confirmación de roles distintos a colaborador', async () => {
+    const { options, calls } = setup({
+      profile: { id: USER, is_active: true, role_code: 'developer' },
+    });
+
+    expect(
+      await errorOf(
+        requestEvidenceUploads(
+          { reportId: REPORT, accessToken: TOKEN, readBody: body({}) },
+          options,
+        ),
+      ),
+    ).toMatchObject({ status: 403, code: 'FORBIDDEN_ROLE' });
+    expect(calls.rpc).toEqual([]);
+    expect(
+      await errorOf(
+        confirmEvidence(
+          { reportId: REPORT, accessToken: TOKEN, readBody: body({}) },
+          options,
+        ),
+      ),
+    ).toMatchObject({ status: 403, code: 'FORBIDDEN_ROLE' });
   });
 
   it('un perfil inactivo puede seguir leyendo lo que la RLS le permite', async () => {
