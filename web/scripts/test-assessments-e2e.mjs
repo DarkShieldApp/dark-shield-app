@@ -38,9 +38,9 @@ const values = Object.fromEntries(
     .map(([, key, value]) => [key, value.replace(/^['"]|['"]$/g, '')]),
 );
 const apiUrl = values.API_URL ?? values.SUPABASE_URL;
-const anonKey = values.ANON_KEY ?? values.PUBLISHABLE_KEY;
+const publishableKey = values.PUBLISHABLE_KEY;
 const serviceRoleKey = values.SERVICE_ROLE_KEY ?? values.SECRET_KEY;
-if (!apiUrl || !anonKey || !serviceRoleKey) {
+if (!apiUrl || !publishableKey || !serviceRoleKey) {
   throw new Error(
     'Supabase local no proporcionó URL y claves para la prueba E2E.',
   );
@@ -59,7 +59,7 @@ run(
     env: {
       ...process.env,
       NEXT_PUBLIC_SUPABASE_URL: apiUrl,
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: anonKey,
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: publishableKey,
       SUPABASE_SERVICE_ROLE_KEY: serviceRoleKey,
       ASSESSMENTS_MIN_TRUST_LEVEL: '40',
     },

@@ -18,17 +18,17 @@ let weakAssessorId = '';
 const suffix = randomUUID();
 const password = `T8-${randomUUID()}-Aa9!`;
 const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
-if (!baseUrl || !anonKey || !serviceRoleKey) {
+if (!baseUrl || !publishableKey || !serviceRoleKey) {
   throw new Error('Ejecuta esta suite con `npm run test:assessments:e2e`.');
 }
 
 const admin = createClient(baseUrl, serviceRoleKey, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
-const publicAuth = createClient(baseUrl, anonKey, {
+const publicAuth = createClient(baseUrl, publishableKey, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 const tokens = new Map<string, string>();
@@ -157,7 +157,7 @@ describe('HU-08/T8: proceso real de valoración con Supabase local', () => {
       ['action', 'createdAt', 'id', 'reportId'].sort(),
     );
 
-    const client: SupabaseClient = createClient(baseUrl, anonKey, {
+    const client: SupabaseClient = createClient(baseUrl, publishableKey, {
       global: {
         headers: { Authorization: `Bearer ${tokens.get('assessor')}` },
       },
