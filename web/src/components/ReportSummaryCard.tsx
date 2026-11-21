@@ -6,6 +6,7 @@ import {
   type CredibilityStatus,
 } from '../lib/reports/summary';
 import styles from './ReportSummaryCard.module.css';
+import { ReportAssessmentControls } from './ReportAssessmentControls';
 
 const CREDIBILITY_CLASS: Record<CredibilityStatus, string | undefined> = {
   high: styles.credibilityHigh,
@@ -162,6 +163,7 @@ export function ReportSummaryCard({
       <p className={styles.notice}>
         <span aria-hidden="true">✳</span> {COMMUNITY_NOTICE}
       </p>
+      <ReportAssessmentControls reportId={view.id} />
     </article>
   );
 }

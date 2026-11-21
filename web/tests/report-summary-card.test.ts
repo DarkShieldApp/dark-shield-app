@@ -1,6 +1,9 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { AuthProvider } from '../src/components/AuthProvider';
+
+vi.mock('client-only', () => ({}));
 import { ReportSummaryCard } from '../src/components/ReportSummaryCard';
 import type {
   ReportCredibilitySummary,
@@ -34,9 +37,13 @@ const credibility: ReportCredibilitySummary = {
 
 function render(overrides: Partial<ReportSummaryItem> = {}) {
   return renderToStaticMarkup(
-    createElement(ReportSummaryCard, {
-      report: { ...report, ...overrides },
-    }),
+    createElement(
+      AuthProvider,
+      null,
+      createElement(ReportSummaryCard, {
+        report: { ...report, ...overrides },
+      }),
+    ),
   );
 }
 
@@ -79,10 +86,14 @@ describe('HU-09/T3 — explicación de factores en la tarjeta', () => {
 
   it('conserva el nivel de título solicitado por el listado', () => {
     const html = renderToStaticMarkup(
-      createElement(ReportSummaryCard, {
-        report: { ...report, credibility },
-        headingLevel: 'h4',
-      }),
+      createElement(
+        AuthProvider,
+        null,
+        createElement(ReportSummaryCard, {
+          report: { ...report, credibility },
+          headingLevel: 'h4',
+        }),
+      ),
     );
 
     expect(html).toContain('<h4');

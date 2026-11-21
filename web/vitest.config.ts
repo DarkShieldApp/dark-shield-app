@@ -23,6 +23,7 @@ export default defineConfig({
         'src/app/api/reports/route.ts',
         'src/app/api/reports/[[]reportId]/assessments/route.ts',
         'src/components/ReportSummaryCard.tsx',
+        'src/components/ReportAssessmentControls.tsx',
       ],
       exclude: ['**/*.d.ts'],
       thresholds: {
