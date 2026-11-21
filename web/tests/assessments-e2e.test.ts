@@ -110,7 +110,7 @@ describe('HU-08/T8: proceso real de valoración con Supabase local', () => {
 
     queryDatabase(`do $setup$
       begin
-        if (exists (select 1 from private.assessment_policy where minimum_trust_level is not null) then
+        if exists (select 1 from private.assessment_policy where minimum_trust_level is not null) then
           raise exception 'HU-08/T8 requiere una instancia local aislada con política sin configurar';
         end if;
 
