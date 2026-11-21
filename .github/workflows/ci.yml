@@ -61,6 +61,8 @@ jobs:
         run: npx --no-install supabase start --exclude studio,postgres-meta,mailpit > "$RUNNER_TEMP/supabase-start.log" 2>&1
       - name: Pruebas PostgreSQL y RLS
         run: npm run test:db
+      - name: Flujo E2E de validaciones HU-08/T8
+        run: npm run test:assessments:e2e --workspace @darkshield/web
       - name: Detener Supabase local
         if: always()
         run: npx --no-install supabase stop

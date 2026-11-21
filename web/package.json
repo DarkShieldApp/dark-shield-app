@@ -11,6 +11,7 @@
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "test:assessments:e2e": "node scripts/test-assessments-e2e.mjs",
     "supabase:check": "node scripts/check-supabase.ts"
   },
   "dependencies": {
