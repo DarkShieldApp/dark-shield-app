@@ -167,8 +167,9 @@ describe('HU-08/T8: proceso real de valoración con Supabase local', () => {
       client,
     });
     expect(firstCredibility.get(reportId)?.factors).toMatchObject({
-      validations: 80,
+      validations: 1,
       invalidations: 0,
+      supportWeight: 0.85,
     });
 
     const second = await request(
@@ -184,7 +185,8 @@ describe('HU-08/T8: proceso real de valoración con Supabase local', () => {
     });
     expect(latestCredibility.get(reportId)?.factors).toMatchObject({
       validations: 0,
-      invalidations: 80,
+      invalidations: 1,
+      againstWeight: 0.85,
     });
 
     await expectError(
