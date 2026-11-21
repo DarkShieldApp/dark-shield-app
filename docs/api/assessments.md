@@ -196,7 +196,7 @@ añade su latencia a la respuesta; no se incorpora una cola ni un timeout nuevo.
 ## Alcance y verificación
 
 T7 conecta exclusivamente las valoraciones con el servicio existente de HU-09.
-No implementa interfaz ni presentación de mensajes T5, login HU-11, E2E T8 ni la integración de
+No implementa interfaz ni presentación de mensajes T5, login HU-11 ni la integración de
 evidencias HU-06/T5. HU-11 debe suministrar y renovar tokens para el flujo final.
 
 - Vitest importa la ruta real y ejecuta T2, sesión y consulta de perfil con la E/S
@@ -209,6 +209,11 @@ evidencias HU-06/T5. HU-11 debe suministrar y renovar tokens para el flujo final
 - `assessment_submission_concurrency.test.sql`: conexiones `dblink` independientes,
   espera observada en `pg_stat_activity`, commits reales y rechazo tras revocación,
   desactivación, cambios de confianza, rol, política y autor.
+- `web/tests/assessments-e2e.test.ts`: ejecuta la ruta real con cuentas temporales de
+  Auth contra Supabase local, comprueba los recibos y la credibilidad actual, y
+  verifica entradas inválidas, autoría, confianza insuficiente y reporte inexistente.
+  El runner `npm run test:assessments:e2e --workspace @darkshield/web` obtiene las
+  claves locales desde `supabase status`; el job `database` lo ejecuta tras pgTAP.
 
 **La suite concurrente requiere una base local aislada.** Confirma fixtures para
 que sean visibles entre conexiones; al terminar elimina solo sus UUID y restaura
@@ -218,7 +223,11 @@ con datos reales. La otra suite usa rollback. `dblink` solo pertenece a los test
 
 Ejecutar `npm.cmd run check`, `npm.cmd run test:coverage`, `npm.cmd run test:db`
 (con `-- --workdir <directorio>` para la instancia independiente) y
-`git diff --check`. No resetear bases existentes para reproducir la prueba.
+`npm.cmd run test:assessments:e2e --workspace @darkshield/web` con Supabase local
+arrancado y política sin configurar; la prueba restaura la política a `NULL` y
+borra sus cuentas y UUID aleatorios al terminar. Ejecutarla solo en una instancia
+local aislada, nunca en una base compartida o con datos reales. No resetear bases
+existentes para reproducir la prueba. Completar también `git diff --check`.
 
 T7 no modifica SQL, migraciones, RLS, ACL ni la selección de agregados: para esta
 integración TypeScript no es necesario repetir pgTAP. Sus pruebas existentes
