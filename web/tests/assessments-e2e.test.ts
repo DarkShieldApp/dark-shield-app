@@ -108,12 +108,12 @@ describe('HU-08/T8: proceso real de valoración con Supabase local', () => {
     assessorId = await createUser('assessor');
     weakAssessorId = await createUser('weak');
 
-    queryDatabase(`
-      do $guard$ begin
+    queryDatabase(`do $setup$
+      begin
         if (exists (select 1 from private.assessment_policy where minimum_trust_level is not null) then
           raise exception 'HU-08/T8 requiere una instancia local aislada con política sin configurar';
         end if;
-      end $guard$;
+
       update public.profiles set trust_level = 80 where id = '${assessorId}';
       update public.profiles set trust_level = 20 where id = '${weakAssessorId}';
       insert into public.reports
@@ -122,20 +122,23 @@ describe('HU-08/T8: proceso real de valoración con Supabase local', () => {
         ('${reportId}', '${authorId}', 'HU-08/T8 fixture', 'Fixture E2E temporal',
          'https://example.test/', 'https://example.test/', 'example.test', 'example.test');
       update private.assessment_policy set minimum_trust_level = 40 where singleton;
-    `);
+      end;
+    $setup$;`);
     fixtureSetup = true;
   }, 60_000);
 
   afterAll(async () => {
     // Test only targets random IDs in an isolated local Supabase database.
     if (createdUsers.length > 0)
-      queryDatabase(`
-      delete from public.report_assessments where report_id = '${reportId}';
-      delete from public.reports where id = '${reportId}';
-      delete from public.profiles where id in (${createdUsers.map((id) => `'${id}'`).join(',')});
-      delete from auth.users where id in (${createdUsers.map((id) => `'${id}'`).join(',')});
+      queryDatabase(`do $cleanup$
+      begin
+        delete from public.report_assessments where report_id = '${reportId}';
+        delete from public.reports where id = '${reportId}';
+        delete from public.profiles where id in (${createdUsers.map((id) => `'${id}'`).join(',')});
+        delete from auth.users where id in (${createdUsers.map((id) => `'${id}'`).join(',')});
       ${fixtureSetup ? 'update private.assessment_policy set minimum_trust_level = null where singleton;' : ''}
-    `);
+      end;
+    $cleanup$;`);
   }, 60_000);
 
   it('guarda el recibo, refleja la última valoración en credibilidad y protege el flujo', async () => {
