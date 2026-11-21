@@ -114,7 +114,7 @@ describe('HU-08/T8: proceso real de valoración con Supabase local', () => {
           raise exception 'HU-08/T8 requiere una instancia local aislada con política sin configurar';
         end if;
 
-      update public.profiles set trust_level = 80 where id = '${assessorId}';
+      update public.profiles set trust_level = 80 where id in ('${authorId}', '${assessorId}');
       update public.profiles set trust_level = 20 where id = '${weakAssessorId}';
       insert into public.reports
         (id, author_id, title, description, target_url, page_key, target_host, registrable_domain)
