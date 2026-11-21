@@ -61,10 +61,56 @@ clasificación interna, sin transportar mensajes, detalles ni pistas del proveed
 Todas estas respuestas mantienen `Cache-Control: private, no-store` y el JSON
 `{ "error": { "code", "message" } }`.
 
-T5 consumirá el recibo y presentará los mensajes de error en la interfaz. No hay reintentos
+T5 consume el recibo y presenta los mensajes de error en la interfaz. No hay reintentos
 automáticos: una pérdida de respuesta puede ocurrir después del commit. Repetir
 la petición crea otra fila; solo cuenta la última, pero no hay idempotencia ni
 deduplicación de reintentos. No se compensa un fallo de red borrando valoraciones.
+
+## Controles del listado — HU-08/T5
+
+Cada `ReportSummaryCard` contiene `ReportAssessmentControls`, con botones
+«Validar reporte» e «Invalidar reporte». La consulta continúa siendo pública.
+Los controles usan `useAuth()` del proveedor existente de HU-11 y obtienen el
+token vigente mediante `getAccessToken()` justo antes del envío. No consultan
+ni simulan roles, perfiles o confianza: el backend conserva la decisión final.
+
+Mientras se carga la sesión o para visitantes sin sesión, ambas acciones están
+deshabilitadas. Se ofrece `/login?next=%2Fconsulta`, un destino local fijo que
+el login de HU-11 valida con su utilidad existente. Al volver se realiza una
+nueva búsqueda; no se persisten aquí filtros ni páginas del listado.
+
+Cada tarjeta bloquea ambas acciones durante la petición, incluida la lectura del
+token. Un bloqueo síncrono evita dobles clics antes del siguiente renderizado.
+Los estados son independientes entre reportes y se descartan al cambiar de
+cuenta; una respuesta tardía no se muestra a otro usuario. Si se cierra la sesión
+antes de obtener el token, no se envía el POST. Una escritura ya enviada puede
+terminar en el servidor aunque la tarjeta deje de estar montada.
+
+Se envían exclusivamente la acción y el Bearer, al endpoint del ID de la tarjeta.
+Solo un `201` con los cuatro campos del recibo, ID válido, reporte y acción
+coincidentes y fecha válida muestra «Validación registrada» o «Invalidación
+registrada». Los errores documentados se traducen a mensajes locales en español;
+no se muestra el mensaje recibido de Supabase ni del servidor. Un `401` ofrece
+de nuevo el enlace de acceso. Las respuestas inesperadas, los fallos de red y
+`SERVICE_UNAVAILABLE` avisan de que el resultado no se ha confirmado y podría
+haberse guardado. No hay reintentos ni redirecciones automáticas del POST.
+
+No se recalcula ni cambia la puntuación en el navegador. La API de consulta
+actual devuelve páginas y no una tarjeta individual; para conservar los resultados
+y su cursor, el éxito indica que la credibilidad se actualizará en una nueva
+consulta. Los botones nativos admiten teclado, tienen foco visible y una altura
+mínima de 44 px; el estado se anuncia con `role="status"`, los errores con
+`role="alert"` y la espera con `aria-busy`. En móvil los botones se apilan.
+
+`report-assessment-controls.test.ts` monta React y el proveedor real de HU-11 en
+jsdom, sustituyendo solo la frontera del cliente Supabase y HTTP. Comprueba
+interacciones, sesión, respuestas, concurrencia visual, accesibilidad básica y
+búsqueda/paginación con el Dashboard real. jsdom se añade solo para desarrollo;
+no es una verificación de Supabase. Las pruebas de tarjetas conservan sus
+aserciones de credibilidad y ahora se renderizan bajo el proveedor de sesión.
+
+El mínimo de confianza sigue pendiente de aprobación. T5 muestra el rechazo
+`POLICY_UNAVAILABLE` y no configura ese mínimo ni desbloquea escrituras.
 
 ## Autorización y escritura
 
@@ -196,8 +242,9 @@ añade su latencia a la respuesta; no se incorpora una cola ni un timeout nuevo.
 ## Alcance y verificación
 
 T7 conecta exclusivamente las valoraciones con el servicio existente de HU-09.
-No implementa interfaz ni presentación de mensajes T5, login HU-11 ni la integración de
-evidencias HU-06/T5. HU-11 debe suministrar y renovar tokens para el flujo final.
+T5 añade los controles descritos arriba y reutiliza el login y la renovación de
+sesión de HU-11. No modifica las pruebas E2E de T8 ni la integración de evidencias
+HU-06/T5.
 
 - Vitest importa la ruta real y ejecuta T2, sesión y consulta de perfil con la E/S
   del SDK sustituida. Cubre entradas, recibos, errores y rechazos en la escritura.
