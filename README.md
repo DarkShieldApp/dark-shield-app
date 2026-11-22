@@ -118,8 +118,9 @@ No despliega, no necesita secretos y no accede al Supabase remoto.
 Vitest cubre clientes, diagnóstico, reportes, selección de evidencias y autorización.
 pgTAP comprueba las migraciones, los privilegios y las operaciones con roles reales.
 Los resultados semanales de T-CTRL conservan su fecha y commit de referencia.
-Véanse [desarrollo](docs/development.md), [dominio](docs/domain-design.md) y
-[métricas históricas](docs/qa/reporte-pruebas-metricas.md).
+Véanse [desarrollo](docs/development.md), [dominio](docs/domain-design.md),
+[métricas históricas](docs/qa/reporte-pruebas-metricas.md) y el
+[informe de cierre del Sprint 1](docs/qa/informe-seguimiento-sprint1.md) (T-CTRL-04, % HUC).
 
 Consultar [la decisión de arquitectura](docs/architecture.md) para el mapa de HU,
 las dependencias del Sprint 1 y las discrepancias encontradas en las fuentes.
