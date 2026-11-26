@@ -8,15 +8,15 @@ El proyecto pretende ayudar a los usuarios a navegar con mayor información y a 
 
 ## Estado y hoja de ruta
 
-| Componente | Estado actual |
-| --- | --- |
-| Consulta web | Búsqueda pública por página o dominio, listado y resumen de reportes y credibilidad. |
+| Componente         | Estado actual                                                                                                                                    |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Consulta web       | Búsqueda pública por página o dominio, listado y resumen de reportes y credibilidad.                                                             |
 | Cuentas y permisos | Registro, inicio de sesión, recuperación y cierre de sesión; backend de perfiles, roles y permisos. La vista de perfil aún usa datos de ejemplo. |
-| Reportes | Formulario, endpoint y modelo de datos disponibles; la creación contra la BD real está bloqueada por la autorización de inserción pendiente. |
-| Evidencias | Flujo de selección, subida firmada y confirmación de imágenes PNG, JPEG y WebP (hasta 10 MiB); visor completo y moderación pendientes. |
-| Valoraciones | API y controles de validación/invalidación; activación real pendiente de la decisión sobre el mínimo de confianza. |
-| Extensión | Popup inicial para Chrome/Edge. Consulta de la página y alertas pendientes. |
-| IA | Sin implementación ni proveedor seleccionado. |
+| Reportes           | Formulario, endpoint y modelo de datos disponibles; la creación contra la BD real está bloqueada por la autorización de inserción pendiente.     |
+| Evidencias         | Flujo de selección, subida firmada y confirmación de imágenes PNG, JPEG y WebP (hasta 10 MiB); visor completo y moderación pendientes.           |
+| Valoraciones       | API y controles de validación/invalidación; activación real pendiente de la decisión sobre el mínimo de confianza.                               |
+| Extensión          | Popup inicial para Chrome/Edge. Consulta de la página y alertas pendientes.                                                                      |
+| IA                 | Sin implementación ni proveedor seleccionado.                                                                                                    |
 
 Las prioridades inmediatas son completar el flujo de reportes y perfiles, resolver la política de valoraciones y preparar una distribución reproducible con datos de prueba. Después se ampliarán la extensión y el análisis asistido por IA conforme al roadmap. Las funcionalidades propuestas no son compromisos de fecha.
 
@@ -83,11 +83,11 @@ En una instancia nueva se aplican las migraciones versionadas. Si ya existe una 
 
 Copia `web/.env.example` a `web/.env` **solo si este último no existe** y configura:
 
-| Variable | Valor |
-| --- | --- |
-| `NEXT_PUBLIC_SUPABASE_URL` | URL base de tu instancia; en local, `http://127.0.0.1:54321`. |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Clave publicable `sb_publishable_...` de tu instancia. |
-| `SUPABASE_SECRET_KEY` | Clave `sb_secret_...`, exclusivamente en servidor; necesaria para iniciar sesión por nombre de usuario. |
+| Variable                               | Valor                                                                                                   |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `NEXT_PUBLIC_SUPABASE_URL`             | URL base de tu instancia; en local, `http://127.0.0.1:54321`.                                           |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Clave publicable `sb_publishable_...` de tu instancia.                                                  |
+| `SUPABASE_SECRET_KEY`                  | Clave `sb_secret_...`, exclusivamente en servidor; necesaria para iniciar sesión por nombre de usuario. |
 
 Usa las claves de tu instancia que proporciona la CLI (si solo ofrece claves JWT heredadas, no las sustituyas por claves incompatibles: consulta la configuración de la CLI y la guía de Supabase). También puedes emplear un proyecto remoto propio de desarrollo con Auth por correo/contraseña, confirmación de correo y migraciones aplicadas por el procedimiento documentado. Nunca uses el proyecto de producción para probar cambios.
 
@@ -109,23 +109,23 @@ Para probar la compilación de producción, ejecuta `npm run build:extension` y 
 
 ## Comandos y calidad
 
-| Comando | Resultado |
-| --- | --- |
-| `npm run dev:web` | Desarrollo de web y backend HTTP. |
-| `npm run dev:extension` | Desarrollo de la extensión. |
-| `npm run build:web` / `npm run build:extension` | Compilar cada aplicación. |
-| `npm run build` | Compilar ambas aplicaciones. |
-| `npm run start --workspace @darkshield/web` | Ejecutar la web compilada en modo producción local. |
-| `npm run lint` | ESLint en ambos workspaces. |
-| `npm run typecheck` | Comprobar tipos TypeScript. |
-| `npm run format` / `npm run format:check` | Formatear o verificar formato con Prettier. |
-| `npm run check` | Formato, lint, tipos y compilación. |
-| `npm test` | Pruebas unitarias en modo no interactivo. |
-| `npm run test:coverage` | Pruebas con cobertura V8 y umbral del 80 % por archivo en el ámbito medido. |
-| `npm run test:db` | Pruebas SQL/pgTAP con Supabase local iniciado. |
-| `npm run test:assessments:e2e --workspace @darkshield/web` | Prueba de integración E2E de valoraciones con entorno local. |
-| `npm run supabase:start` / `npm run supabase:stop` | Iniciar/detener Supabase local (stop conserva los datos). |
-| `npm run supabase:status` / `npm run supabase:check` | Estado local / diagnóstico de Auth. |
+| Comando                                                    | Resultado                                                                   |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `npm run dev:web`                                          | Desarrollo de web y backend HTTP.                                           |
+| `npm run dev:extension`                                    | Desarrollo de la extensión.                                                 |
+| `npm run build:web` / `npm run build:extension`            | Compilar cada aplicación.                                                   |
+| `npm run build`                                            | Compilar ambas aplicaciones.                                                |
+| `npm run start --workspace @darkshield/web`                | Ejecutar la web compilada en modo producción local.                         |
+| `npm run lint`                                             | ESLint en ambos workspaces.                                                 |
+| `npm run typecheck`                                        | Comprobar tipos TypeScript.                                                 |
+| `npm run format` / `npm run format:check`                  | Formatear o verificar formato con Prettier.                                 |
+| `npm run check`                                            | Formato, lint, tipos y compilación.                                         |
+| `npm test`                                                 | Pruebas unitarias en modo no interactivo.                                   |
+| `npm run test:coverage`                                    | Pruebas con cobertura V8 y umbral del 80 % por archivo en el ámbito medido. |
+| `npm run test:db`                                          | Pruebas SQL/pgTAP con Supabase local iniciado.                              |
+| `npm run test:assessments:e2e --workspace @darkshield/web` | Prueba de integración E2E de valoraciones con entorno local.                |
+| `npm run supabase:start` / `npm run supabase:stop`         | Iniciar/detener Supabase local (stop conserva los datos).                   |
+| `npm run supabase:status` / `npm run supabase:check`       | Estado local / diagnóstico de Auth.                                         |
 
 GitHub Actions ejecuta dos jobs (`check` y `database`) en PR hacia `main` y push a `main`: comprueba formato, lint, tipos, build y cobertura; inicia Supabase local, ejecuta pgTAP y el E2E de valoraciones. No despliega ni necesita secretos remotos. La extensión aún no tiene una suite propia. La cobertura no representa el producto completo: consulta `web/vitest.config.ts` para conocer su alcance exacto.
 
@@ -133,15 +133,15 @@ Instala dependencias específicas con `npm install <paquete> --workspace @darksh
 
 ## Documentación
 
-| Documento | Contenido |
-| --- | --- |
-| [Arquitectura](docs/architecture.md) | Componentes, responsabilidades y ADR. |
-| [Desarrollo](docs/development.md) | Organización técnica, calidad y pruebas. |
-| [Supabase](supabase/README.md) | Configuración, migraciones y pgTAP. |
-| [API de reportes](docs/api/reports.md) | Contratos de consulta y creación. |
-| [API de evidencias](docs/api/evidences.md) | Subida, confirmación y lectura. |
-| [API de autorización](docs/api/authorization.md) | Perfiles, permisos y administración. |
-| [API de valoraciones](docs/api/assessments.md) | Contrato de validación e invalidación. |
+| Documento                                        | Contenido                                |
+| ------------------------------------------------ | ---------------------------------------- |
+| [Arquitectura](docs/architecture.md)             | Componentes, responsabilidades y ADR.    |
+| [Desarrollo](docs/development.md)                | Organización técnica, calidad y pruebas. |
+| [Supabase](supabase/README.md)                   | Configuración, migraciones y pgTAP.      |
+| [API de reportes](docs/api/reports.md)           | Contratos de consulta y creación.        |
+| [API de evidencias](docs/api/evidences.md)       | Subida, confirmación y lectura.          |
+| [API de autorización](docs/api/authorization.md) | Perfiles, permisos y administración.     |
+| [API de valoraciones](docs/api/assessments.md)   | Contrato de validación e invalidación.   |
 
 Algunas guías del Sprint 1 conservan referencias históricas que requieren actualización; contrasta el código y los contratos actuales antes de implementar. La documentación pública definitiva debe ajustarse al perímetro aprobado en la estrategia de apertura.
 
