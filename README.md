@@ -124,3 +124,9 @@ Véanse [desarrollo](docs/development.md), [dominio](docs/domain-design.md),
 
 Consultar [la decisión de arquitectura](docs/architecture.md) para el mapa de HU,
 las dependencias del Sprint 1 y las discrepancias encontradas en las fuentes.
+
+## Open source
+
+La [estrategia y alcance de la apertura](docs/open-source/open-source-strategy.md)
+recoge por qué se publica el proyecto, qué componentes quedan fuera y en qué estado
+de madurez se encuentra.
