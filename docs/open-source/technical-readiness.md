@@ -1,4 +1,4 @@
-# Preparación técnica y seguridad — Dark-Shield
+﻿# Preparación técnica y seguridad — Dark-Shield
 
 | Campo    | Valor                                                    |
 | -------- | -------------------------------------------------------- |
@@ -13,16 +13,16 @@
 
 **Decisión:** conservar el monorepositorio TypeScript con npm workspaces. La separación actual permite trabajar en la web y la extensión sin duplicar dependencias ni perder la trazabilidad de los cambios en la base de datos.
 
-| Componente               | Estado y decisión                                                                                                                     |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `web/`                   | Next.js: interfaz, API y lógica de negocio. Publicar salvo la implementación privada de credibilidad.                                 |
-| `extension/`             | WXT y React: publicar el prototipo Manifest V3, indicando que todavía no consume la API.                                              |
-| `supabase/`              | Publicar migraciones, configuración local y pruebas pgTAP, incluidas RLS y autorización. Excluir datos y configuración de producción. |
+| Componente               | Estado y decisión                                                                                                                                      |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `web/`                   | Next.js: interfaz, API y lógica de negocio. Publicar salvo la implementación privada de credibilidad.                                                  |
+| `extension/`             | WXT y React: publicar el prototipo Manifest V3, indicando que todavía no consume la API.                                                               |
+| `supabase/`              | Publicar migraciones, configuración local y pruebas pgTAP, incluidas RLS y autorización. Excluir datos y configuración de producción.                  |
 | Módulo de IA             | Sin código actual; cuando se implemente se ubicará en `web/src/server/ai/` (con `server-only`) y se publicará íntegro, incluidos prompts y evaluación. |
-| `docs/`, `.github/`      | Mantener documentación técnica, ADR, plantillas y CI; revisar referencias internas y datos personales antes de publicar.              |
-| `reuniones/`, `docs/qa/` | Trasladar a un espacio privado: contienen material interno y no son necesarios para contribuir.                                       |
+| `docs/`, `.github/`      | Mantener documentación técnica, ADR, plantillas y CI; revisar referencias internas y datos personales antes de publicar.                               |
+| `reuniones/`, `docs/qa/` | Trasladar a un espacio privado: contienen material interno y no son necesarios para contribuir.                                                        |
 
-`.gitignore` ya excluye dependencias, compilaciones, cobertura, archivos `.env` y temporales de Supabase. Se propone añadir `reuniones/`, `docs/qa/` y `.idea/` y retirar del seguimiento Git los archivos internos ya versionados, actualizando los enlaces internos de `docs/` que apunten a ellos. En los documentos públicos se mantendrán únicamente los nombres de los *maintainers* públicos (`GOVERNANCE.md`, `MAINTAINERS.md`), retirando datos personales innecesarios o sensibles. Ignorar archivos en `.gitignore` no elimina las versiones anteriores. El ZIP de trabajo contiene además archivos locales y generados que no deben formar parte de una release.
+`.gitignore` ya excluye dependencias, compilaciones, cobertura, archivos `.env` y temporales de Supabase. Se propone añadir `reuniones/`, `docs/qa/` y `.idea/` y retirar del seguimiento Git los archivos internos ya versionados, actualizando los enlaces internos de `docs/` que apunten a ellos. En los documentos públicos se mantendrán únicamente los nombres de los _maintainers_ públicos (`GOVERNANCE.md`, `MAINTAINERS.md`), retirando datos personales innecesarios o sensibles. Ignorar archivos en `.gitignore` no elimina las versiones anteriores. El ZIP de trabajo contiene además archivos locales y generados que no deben formar parte de una release.
 
 De acuerdo con el [Equipo A](open-source-strategy.md), extraer `web/src/server/credibility.ts` a un módulo privado mediante `CredibilityProvider`, publicar una implementación de referencia y adaptar sus consumidores, pruebas y documentación. El clon público debe poder compilar sin acceso al módulo privado. La fórmula actual ya está en el historial; será necesario cambiar los parámetros de producción y no confiar en ocultar el código como única defensa ante valoraciones manipuladas.
 
@@ -56,14 +56,14 @@ Generar un inventario/SBOM de la release, comprobar las licencias restantes y co
 
 **Decisión:** separar desarrollo local, CI y producción, sin obligar a un contribuidor a utilizar el proyecto Supabase compartido. Se mantendrán las plantillas `.env.example` y se completará la documentación de configuración.
 
-| Parámetro                              | Gestión                                                                                                                                                                                                             |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `NEXT_PUBLIC_SUPABASE_URL`             | URL de instancia propia. HTTPS salvo HTTP en loopback local; no incluir credenciales.                                                                                                                               |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Clave pública `sb_publishable_...`, visible en cliente. La protección real depende de RLS y permisos.                                                                                                               |
-| `SUPABASE_SECRET_KEY`                  | Exclusivamente servidor; `username-auth.ts` usa `server-only`. Guardar en el gestor de secretos del despliegue; nunca en la extensión.                                                                              |
-| `ASSESSMENTS_MIN_TRUST_LEVEL`          | Añadir a la plantilla y documentar el valor acordado por el PO; debe coincidir con `private.assessment_policy.minimum_trust_level`. Actualmente la política se inicializa a `NULL` y bloquea valoraciones (OBS-02). |
-| `VITE_API_BASE_URL`                    | Variable pública de extensión aún no consumida; no introducir claves en el paquete WXT.                                                                                                                             |
-| Variables de proveedor de IA (futuras) | Configurar exclusivamente en el entorno de servidor (`server-only`) cuando se defina el proveedor del módulo de IA; no exponerlas al cliente ni a la extensión.                                                     |
+| Parámetro                              | Gestión                                                                                                                                                                                                                                                 |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NEXT_PUBLIC_SUPABASE_URL`             | URL de instancia propia. HTTPS salvo HTTP en loopback local; no incluir credenciales.                                                                                                                                                                   |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Clave pública `sb_publishable_...`, visible en cliente. La protección real depende de RLS y permisos.                                                                                                                                                   |
+| `SUPABASE_SECRET_KEY`                  | Exclusivamente servidor; `username-auth.ts` usa `server-only`. Guardar en el gestor de secretos del despliegue; nunca en la extensión.                                                                                                                  |
+| `ASSESSMENTS_MIN_TRUST_LEVEL`          | Añadir a la plantilla y documentar el valor acordado por el PO y el Comité mediante ADR (Equipo D); debe coincidir con `private.assessment_policy.minimum_trust_level`. Actualmente la política se inicializa a `NULL` y bloquea valoraciones (OBS-02). |
+| `VITE_API_BASE_URL`                    | Variable pública de extensión aún no consumida; no introducir claves en el paquete WXT.                                                                                                                                                                 |
+| Variables de proveedor de IA (futuras) | Configurar exclusivamente en el entorno de servidor (`server-only`) cuando se defina el proveedor del módulo de IA; no exponerlas al cliente ni a la extensión.                                                                                         |
 
 El entorno reproducible se basa en Node.js 24 (`.nvmrc`), npm 11/12 (CI: 12.2.1), Docker y Supabase local con PostgreSQL 17 (`supabase/config.toml`). Antes de publicar, probar el README desde un clon limpio, incorporar datos sintéticos y verificar que autenticación, permisos, creación de reportes y valoraciones funcionan sin infraestructura privada. No publicar volcados ni emplear credenciales de producción en CI.
 
@@ -94,7 +94,7 @@ En coordinación con el [Equipo D](governance-and-sustainability.md), exigir PR 
 
 ## 7. Acciones pendientes y criterio de publicación
 
-- [ ] **Owners:** verificar quiénes son los owners actuales de GitHub y Supabase (asegurando al menos dos con 2FA) y configurar las reglas efectivas de protección de `main` (`check` y `database` obligatorios, CODEOWNERS, *squash merge* y prohibición de fusión propia).
+- [ ] **Owners:** verificar quiénes son los owners actuales de GitHub y Supabase (asegurando al menos dos con 2FA) y configurar las reglas efectivas de protección de `main` (`check` y `database` obligatorios, CODEOWNERS, _squash merge_ y prohibición de fusión propia).
 - [ ] **Owners y maintainers de seguridad:** completar la auditoría de secretos e historial remoto (`Gitleaks`), retirar `reuniones/` y `docs/qa/`, corregir los enlaces internos rotos en `docs/` y habilitar `SECURITY.md` con contacto confidencial.
 - [ ] **Maintainers de backend:** extraer `credibility.ts` tras `CredibilityProvider` con nuevos parámetros de producción y verificar la compilación y CI de la variante pública con la implementación de referencia.
 - [ ] **Maintainers de BD y API, con el PO:** corregir autorización y activar la política de valoraciones (OBS-01, OBS-02, OBS-05, OBS-06); validar el flujo completo con datos sintéticos.
