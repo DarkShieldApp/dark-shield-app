@@ -27,15 +27,15 @@ código persigue tres objetivos:
 
 ## 2. Componentes que se publican y cuáles no
 
-| Parte                                    | Ubicación en el repositorio                                                                                                     | Decisión                                                   |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| Extensión del navegador                  | `extension/`                                                                                                                    | Se publica                                                 |
-| Web, API y lógica de reportes/evidencias | `web/src/app/`, `web/src/components/`, `web/src/lib/`, `web/src/server/` (salvo abajo)                                          | Se publica                                                 |
-| Modelo de datos, permisos y RLS          | `supabase/migrations/`, `supabase/tests/`                                                                                       | Se publica (véase «Seguridad de datos»)                    |
-| IA                                       | No existe todavía; [PENDIENTE: ubicación del módulo de IA]                                                                      | **Se publicará íntegra**, incluidos prompts y evaluación   |
-| Algoritmo de puntuación de reportes      | `web/src/server/credibility.ts`, `web/tests/credibility.test.ts`, sección «Credibilidad de reportes» de `docs/domain-design.md` | **No se publica** la implementación                        |
-| Seguridad de los datos de los clientes   | Secretos y configuración de producción (`web/.env`, `SUPABASE_SECRET_KEY`, proyecto Supabase remoto)                            | **No se publica**                                          |
-| Material interno del equipo              | `reuniones/` (audios y transcripciones), informes de seguimiento de `docs/qa/`                                                  | **No se publica**: no aporta nada a un colaborador externo |
+| Parte                                    | Ubicación en el repositorio                                                                                                                                                                                                                                                                                                                                   | Decisión                                                                  |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Extensión del navegador                  | `extension/`                                                                                                                                                                                                                                                                                                                                                  | Se publica                                                                |
+| Web, API y lógica de reportes/evidencias | `web/src/app/`, `web/src/components/`, `web/src/lib/`, `web/src/server/` (salvo abajo)                                                                                                                                                                                                                                                                        | Se publica                                                                |
+| Modelo de datos                          | `supabase/migrations/`, `supabase/tests/`                                                                                                                                                                                                                                                                                                                     | Se publica, salvo lo indicado en «Seguridad de los datos de los clientes» |
+| IA                                       | No existe todavía; [PENDIENTE: ubicación del módulo de IA]                                                                                                                                                                                                                                                                                                    | **Se publicará íntegra**, incluidos prompts y evaluación                  |
+| Algoritmo de puntuación de reportes      | `web/src/server/credibility.ts`, `web/tests/credibility.test.ts`, sección «Credibilidad de reportes» de `docs/domain-design.md`, los pesos del campo `credibility.factors` (`docs/api/reports.md`, «Credibilidad en el listado»), «Integración con credibilidad» de `docs/api/assessments.md` y el apartado de `credibility.ts` en `web/src/server/README.md` | **No se publica** la implementación                                       |
+| Seguridad de los datos de los clientes   | Políticas RLS y permisos (`supabase/migrations/`), autorización, autenticación y sesiones (`web/src/server/`), y secretos y configuración de producción (`web/.env`, `SUPABASE_SECRET_KEY`, proyecto Supabase remoto)                                                                                                                                         | **No se publica**                                                         |
+| Material interno del equipo              | `reuniones/` (audios y transcripciones), informes de seguimiento de `docs/qa/`                                                                                                                                                                                                                                                                                | **No se publica**: no aporta nada a un colaborador externo                |
 
 **Por qué se excluye el algoritmo de puntuación.** La credibilidad decide qué reportes se muestran
 como fiables. Con la fórmula, los pesos y los umbrales a la vista, un grupo coordinado sabe
@@ -55,30 +55,33 @@ creíble puede leerse como una caja negra. Para evitarlo:
    visibles, última valoración de cada usuario, nivel de confianza), las garantías (el autor no
    puntúa su reporte, un solo valorador no decide, las evidencias tienen un tope, la IA no basta
    por sí sola para el nivel alto) y la salida, que la interfaz ya explica al usuario con sus
-   factores. No se publican pesos, umbrales ni el análisis de ataques.
+   factores. No se publican pesos, umbrales ni el análisis de ataques. La API pública tampoco los
+   expone: `credibility.factors` se limita a los recuentos que se muestran al usuario, sin pesos.
 3. **Cambiar los parámetros al separarlo.** La versión actual ya es pública, también en el
    historial de git: ocultar el fichero sin cambiar sus valores no protege nada.
 
-**Perímetro de «seguridad de los datos».** Las políticas RLS y la autorización son necesarias para
-que el proyecto funcione en local y ganan con revisión externa, por lo que proponemos publicarlas y
-excluir solo lo que da acceso real: claves, configuración y datos de producción.
-[PENDIENTE: confirmación del equipo de este perímetro.]
+**Perímetro de «seguridad de los datos».** No se publica el código relacionado con la seguridad de
+los datos de los clientes: políticas RLS y permisos, autorización, autenticación y gestión de
+sesiones, además de claves, configuración y datos de producción. Para que el proyecto pueda
+ejecutarse en local, el repositorio público incluye una configuración de seguridad mínima de
+ejemplo, marcada como no apta para producción.
 
 ## 3. Usuarios y colaboradores potenciales
 
-| Perfil                                         | Qué busca                                                 | Dónde puede aportar                                       |
-| ---------------------------------------------- | --------------------------------------------------------- | --------------------------------------------------------- |
-| Usuario habitual de internet                   | Saber si una web le manipula antes de pagar o registrarse | Uso de la extensión y reportes con evidencias             |
-| Usuario comprometido con un internet accesible | Señalar patrones y validar los de otros                   | Valoraciones, nuevas categorías de patrones, traducciones |
-| Desarrollador web o de extensiones             | Un proyecto útil en React/TypeScript                      | `extension/` (casi vacía) y la interfaz web               |
-| Desarrollador interesado en seguridad          | Revisar cómo se protegen los datos                        | RLS, autorización, auditorías de `supabase/` y de la API  |
-| Perfil de IA                                   | Un caso real y abierto de análisis de reportes            | El módulo de IA desde su diseño                           |
-| Creador de productos derivados                 | Reutilizar la base para su propia herramienta             | Forks; mejoras que vuelvan al proyecto                    |
+| Perfil                                         | Qué busca                                                 | Dónde puede aportar                                                                  |
+| ---------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Usuario habitual de internet                   | Saber si una web le manipula antes de pagar o registrarse | Uso de la extensión y reportes con evidencias                                        |
+| Usuario comprometido con un internet accesible | Señalar patrones y validar los de otros                   | Valoraciones, nuevas categorías de patrones, traducciones                            |
+| Desarrollador web o de extensiones             | Un proyecto útil en React/TypeScript                      | `extension/` (casi vacía) y la interfaz web                                          |
+| Desarrollador interesado en seguridad          | Revisar la seguridad de la parte publicada                | Revisión de la API y la extensión públicas; comunicación privada de vulnerabilidades |
+| Perfil de IA                                   | Un caso real y abierto de análisis de reportes            | El módulo de IA desde su diseño                                                      |
+| Creador de productos derivados                 | Reutilizar la base para su propia herramienta             | Forks; mejoras que vuelvan al proyecto                                               |
 
 ## 4. Madurez del proyecto y funcionalidades no preparadas
 
-Dark Shield es un **primer prototipo**. La base técnica es sólida (CI en verde, alta cobertura de
-pruebas, migraciones con pruebas pgTAP), pero la funcionalidad de cara al usuario está incompleta:
+Dark Shield está en una **etapa muy temprana**: es un primer prototipo que sirve para mejorar y
+aprender de los errores, y deja mucho margen de mejora a quien contribuya. Ya cuenta con CI y
+pruebas automatizadas, pero la funcionalidad de cara al usuario está incompleta:
 
 - **IA:** sin código ni proveedor elegido (`docs/architecture.md`).
 - **Extensión:** solo un popup con texto fijo; no consulta reportes ni muestra alertas.
@@ -90,7 +93,8 @@ pruebas, migraciones con pruebas pgTAP), pero la funcionalidad de cara al usuari
 - **Moderación de evidencias:** sin endpoint.
 - **Sesiones:** sin cookies SSR y sin sesión en la extensión.
 
-**Dificultades para un colaborador externo.** El sistema interno es complejo: reglas de negocio
+**Dificultades para un colaborador externo.** El funcionamiento del sistema interno puede resultar
+tedioso y complejo: reglas de negocio
 repartidas entre TypeScript, funciones SQL y políticas RLS; documentación en español organizada
 por historias de usuario internas; y dependencia de Docker y Supabase CLI para ejecutar las
 pruebas de base de datos. La IA añadirá complejidad propia. Hoy no hay ningún issue abierto, y
@@ -121,10 +125,12 @@ tampoco ninguno marcado como _good first issue_, por el que empezar.
 
 ## 7. Acciones pendientes
 
-- [ ] Confirmar el perímetro de «seguridad de los datos» de la sección 2.
+- [ ] Separar el código de seguridad de los datos de los clientes (sección 2) y publicar la
+      configuración mínima de ejemplo para desarrollo local.
 - [ ] Definir `CredibilityProvider`, mover la implementación a un paquete privado con nuevos parámetros
       y publicar la implementación de referencia.
-- [ ] Sustituir la sección de credibilidad de `docs/domain-design.md` por la especificación de comportamiento.
+- [ ] Sustituir la sección de credibilidad de `docs/domain-design.md` por la especificación de comportamiento,
+      y retirar los pesos de `credibility.factors` de la API y de `docs/api/`.
 - [ ] Retirar `reuniones/` y los informes internos del repositorio público.
 - [ ] Decidir el idioma de la documentación pública. [PENDIENTE: español, inglés o ambos.]
 - [ ] Publicar el borrador del contrato de la IA. [PENDIENTE: proveedor y ubicación del módulo.]
