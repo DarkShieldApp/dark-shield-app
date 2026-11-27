@@ -4,6 +4,8 @@ Dark-Shield es una plataforma colaborativa para consultar, comunicar y evaluar p
 
 El proyecto pretende ayudar a los usuarios a navegar con mayor información y a los desarrolladores a identificar y evitar prácticas de diseño engañosas. La comunidad puede aportar reportes, evidencias y valoraciones. La inteligencia artificial, cuando se incorpore, ayudará a estructurar y analizar los reportes, **sin detectar por sí sola los patrones ni decidir de forma autónoma su validez**.
 
+Su objetivo es convertir internet en un sitio más accesible y seguro. Por eso buscamos usuarios familiarizados con internet que quieran mejorarlo y desarrolladores que ayuden a mantener y mejorar la aplicación para ofrecer una mayor protección.
+
 > **Estado: prototipo en desarrollo (preparación para Open Source).** No es una herramienta de detección automática ni un servicio listo para producción. La existencia de un reporte no prueba que una web use patrones oscuros; la ausencia de reportes tampoco garantiza que sea segura.
 
 ## Estado y hoja de ruta
@@ -147,7 +149,7 @@ Algunas guías del Sprint 1 conservan referencias históricas que requieren actu
 
 ## Contribuir y obtener ayuda
 
-Se agradecen contribuciones de código, pruebas, documentación, accesibilidad, experiencia de usuario y propuestas de categorías de patrones oscuros. Si es tu primera contribución, busca las tareas con la etiqueta [`good first issue`](https://github.com/DarkShieldApp/dark-shield-app/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) cuando se publiquen.
+Se agradecen contribuciones de código, pruebas, documentación, accesibilidad, experiencia de usuario y propuestas de categorías de patrones oscuros. Si es tu primera contribución, busca las tareas con la etiqueta [`good first issue`](https://github.com/DarkShieldApp/dark-shield-app/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) cuando se publiquen. Ten en cuenta que el funcionamiento interno puede resultar tedioso y complejo, con reglas repartidas entre TypeScript y SQL y, en el futuro, la IA: empieza por la [arquitectura](docs/architecture.md) y por una tarea acotada.
 
 - [Guía de contribución](CONTRIBUTING.md): issues, ramas, commits, pruebas y PR.
 - [Código de conducta](CODE_OF_CONDUCT.md): normas y procedimiento confidencial de denuncia.

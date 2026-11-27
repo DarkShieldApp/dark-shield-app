@@ -93,7 +93,8 @@ pruebas automatizadas, pero la funcionalidad de cara al usuario está incompleta
 - **Moderación de evidencias:** sin endpoint.
 - **Sesiones:** sin cookies SSR y sin sesión en la extensión.
 
-**Dificultades para un colaborador externo.** El sistema interno es complejo: reglas de negocio
+**Dificultades para un colaborador externo.** El funcionamiento del sistema interno puede resultar
+tedioso y complejo: reglas de negocio
 repartidas entre TypeScript, funciones SQL y políticas RLS; documentación en español organizada
 por historias de usuario internas; y dependencia de Docker y Supabase CLI para ejecutar las
 pruebas de base de datos. La IA añadirá complejidad propia. Hoy no hay ningún issue abierto, y

@@ -27,6 +27,8 @@ Contenido mínimo definido: propósito y destinatarios, estado real y limitacion
 
 Esta decisión reduce el coste de incorporación y el riesgo de expectativas falsas. Antes de anunciar la apertura, una persona ajena a la implementación deberá seguir el README desde un clon limpio, registrar bloqueos y corregir los enlaces y pasos. Se mantiene el castellano de la documentación existente; la decisión de añadir una versión inglesa se coordinará con el Equipo A. No se afirma que el flujo completo esté operativo ni se promete un tiempo de instalación sin medirlo.
 
+**Dificultad conocida.** El funcionamiento interno puede resultar tedioso y complejo para quien llega de fuera, incluida la IA cuando se incorpore. Para reducir esa barrera, el README remite a la arquitectura y las primeras tareas se ofrecen como _good first issues_ acotadas, cada una con un maintainer como mentor.
+
 ## 3. Gestión de issues
 
 **Decisión:** mantener las plantillas existentes [Bug report](../../.github/ISSUE_TEMPLATE/bug_report.md) y [Feature request](../../.github/ISSUE_TEMPLATE/feature_request.md) como canal de entrada público. Su uso, clasificación y seguimiento se describen en [CONTRIBUTING.md, sección 2](../../CONTRIBUTING.md#2-issues-comunicar-errores-y-proponer-mejoras).
