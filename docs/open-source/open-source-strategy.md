@@ -79,8 +79,9 @@ ejemplo, marcada como no apta para producción.
 
 ## 4. Madurez del proyecto y funcionalidades no preparadas
 
-Dark Shield es un **primer prototipo**. La base técnica es sólida (CI en verde, alta cobertura de
-pruebas, migraciones con pruebas pgTAP), pero la funcionalidad de cara al usuario está incompleta:
+Dark Shield está en una **etapa muy temprana**: es un primer prototipo que sirve para mejorar y
+aprender de los errores, y deja mucho margen de mejora a quien contribuya. Ya cuenta con CI y
+pruebas automatizadas, pero la funcionalidad de cara al usuario está incompleta:
 
 - **IA:** sin código ni proveedor elegido (`docs/architecture.md`).
 - **Extensión:** solo un popup con texto fijo; no consulta reportes ni muestra alertas.
