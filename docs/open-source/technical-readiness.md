@@ -18,22 +18,23 @@
 | `web/`                   | Next.js: interfaz, API y lógica de negocio. Publicar salvo la implementación privada de credibilidad.                                 |
 | `extension/`             | WXT y React: publicar el prototipo Manifest V3, indicando que todavía no consume la API.                                              |
 | `supabase/`              | Publicar migraciones, configuración local y pruebas pgTAP, incluidas RLS y autorización. Excluir datos y configuración de producción. |
+| Módulo de IA             | Sin código actual; cuando se implemente se ubicará en `web/src/server/ai/` (con `server-only`) y se publicará íntegro, incluidos prompts y evaluación. |
 | `docs/`, `.github/`      | Mantener documentación técnica, ADR, plantillas y CI; revisar referencias internas y datos personales antes de publicar.              |
 | `reuniones/`, `docs/qa/` | Trasladar a un espacio privado: contienen material interno y no son necesarios para contribuir.                                       |
 
-`.gitignore` ya excluye dependencias, compilaciones, cobertura, archivos `.env` y temporales de Supabase. Se propone añadir `reuniones/`, `docs/qa/` y `.idea/` y retirar del seguimiento Git los archivos internos ya versionados. Ignorarlos no elimina las versiones anteriores. El ZIP de trabajo contiene además archivos locales y generados que no deben formar parte de una release.
+`.gitignore` ya excluye dependencias, compilaciones, cobertura, archivos `.env` y temporales de Supabase. Se propone añadir `reuniones/`, `docs/qa/` y `.idea/` y retirar del seguimiento Git los archivos internos ya versionados, actualizando los enlaces internos de `docs/` que apunten a ellos. En los documentos públicos se mantendrán únicamente los nombres de los *maintainers* públicos (`GOVERNANCE.md`, `MAINTAINERS.md`), retirando datos personales innecesarios o sensibles. Ignorar archivos en `.gitignore` no elimina las versiones anteriores. El ZIP de trabajo contiene además archivos locales y generados que no deben formar parte de una release.
 
 De acuerdo con el [Equipo A](open-source-strategy.md), extraer `web/src/server/credibility.ts` a un módulo privado mediante `CredibilityProvider`, publicar una implementación de referencia y adaptar sus consumidores, pruebas y documentación. El clon público debe poder compilar sin acceso al módulo privado. La fórmula actual ya está en el historial; será necesario cambiar los parámetros de producción y no confiar en ocultar el código como única defensa ante valoraciones manipuladas.
 
 ## 2. Secretos, credenciales y datos sensibles
 
-**Resultado de la revisión:** el ZIP solo contiene `web/.env.example` y `extension/.env.example` como archivos de entorno fuera de dependencias y artefactos generados. No aparecen archivos `.env` reales entre los archivos versionados actuales ni entre las rutas históricas revisadas. Las plantillas web no contienen valores de claves.
+**Resultado de la revisión:** la copia analizada solo contiene `web/.env.example` y `extension/.env.example` como archivos de entorno fuera de dependencias y artefactos generados. No aparecen archivos `.env` o `.env.local` reales entre los archivos versionados actuales ni entre las rutas históricas revisadas. Las plantillas web no contienen valores de claves.
 
-Se revisaron las 59 revisiones accesibles desde las referencias Git incluidas en la copia y 433 objetos de texto históricos distintos mediante patrones de claves Supabase, JWT, tokens GitHub, claves privadas, AWS y OpenAI, sin detectar coincidencias con esos patrones. Es una búsqueda preliminar: se excluyeron 24 objetos binarios o de más de 2 MB; no sustituye un escaneo especializado ni acredita que nunca se hayan expuesto credenciales.
+Se revisaron las 59 revisiones accesibles desde las referencias Git incluidas en la copia local y 433 objetos de texto históricos distintos mediante patrones de claves Supabase, JWT, tokens GitHub, claves privadas, AWS y OpenAI, sin detectar coincidencias con esos patrones. Es una búsqueda preliminar: se excluyeron 24 objetos binarios o de más de 2 MB y falta contrastar contra todas las ramas remotas del repositorio; no sustituye un escaneo especializado ni acredita que nunca se hayan expuesto credenciales.
 
 Sí se confirma la presencia de 20 audios y transcripciones en `reuniones/` y dos informes en `docs/qa/`, además del algoritmo excluido por el Equipo A. Su publicación supone un riesgo de privacidad y de incumplimiento del alcance acordado.
 
-**Decisión:** antes de anunciar la apertura, ejecutar Gitleaks sobre el árbol actual y todo el historial disponible, revisar manualmente documentación, archivos binarios y artefactos, y verificar las referencias remotas. Si aparecen secretos reales, revocarlos y rotarlos inmediatamente, investigar su uso y sanear el historial cuando proceda. Los maintainers coordinarán la limpieza con los owners; borrar un archivo o reescribir Git no elimina copias, forks ni clones existentes. Activar protección frente a nuevos secretos en GitHub y CI, y habilitar un canal confidencial de vulnerabilidades (`SECURITY.md`). No incluir evidencias, usuarios ni reportes reales en ejemplos o pruebas.
+**Decisión:** antes de anunciar la apertura, ejecutar Gitleaks sobre el árbol actual y todo el historial disponible, revisar manualmente documentación, archivos binarios y artefactos, y verificar las referencias remotas. Si aparecen secretos reales, revocarlos y rotarlos inmediatamente, investigar su uso y sanear el historial cuando proceda. Los maintainers coordinarán la limpieza con los owners; borrar un archivo o reescribir Git no elimina copias, forks ni clones existentes. Activar protección frente a nuevos secretos en GitHub y CI, y habilitar un canal confidencial de vulnerabilidades (`SECURITY.md`). No incluir evidencias, usuarios ni reportes reales en ejemplos o pruebas. Cuando se incorpore el módulo de IA, sus credenciales de proveedor externo se gestionarán exclusivamente mediante variables de entorno en servidor, sin claves incrustadas en el código ni en la extensión.
 
 ## 3. Dependencias y licencias de terceros
 
@@ -62,6 +63,7 @@ Generar un inventario/SBOM de la release, comprobar las licencias restantes y co
 | `SUPABASE_SECRET_KEY`                  | Exclusivamente servidor; `username-auth.ts` usa `server-only`. Guardar en el gestor de secretos del despliegue; nunca en la extensión.                                                                              |
 | `ASSESSMENTS_MIN_TRUST_LEVEL`          | Añadir a la plantilla y documentar el valor acordado por el PO; debe coincidir con `private.assessment_policy.minimum_trust_level`. Actualmente la política se inicializa a `NULL` y bloquea valoraciones (OBS-02). |
 | `VITE_API_BASE_URL`                    | Variable pública de extensión aún no consumida; no introducir claves en el paquete WXT.                                                                                                                             |
+| Variables de proveedor de IA (futuras) | Configurar exclusivamente en el entorno de servidor (`server-only`) cuando se defina el proveedor del módulo de IA; no exponerlas al cliente ni a la extensión.                                                     |
 
 El entorno reproducible se basa en Node.js 24 (`.nvmrc`), npm 11/12 (CI: 12.2.1), Docker y Supabase local con PostgreSQL 17 (`supabase/config.toml`). Antes de publicar, probar el README desde un clon limpio, incorporar datos sintéticos y verificar que autenticación, permisos, creación de reportes y valoraciones funcionan sin infraestructura privada. No publicar volcados ni emplear credenciales de producción en CI.
 
@@ -92,10 +94,11 @@ En coordinación con el [Equipo D](governance-and-sustainability.md), exigir PR 
 
 ## 7. Acciones pendientes y criterio de publicación
 
-- [ ] Owners y maintainers de seguridad: completar la auditoría de secretos e historial, retirar material interno y habilitar el canal confidencial.
-- [ ] Maintainers de backend: separar credibilidad y verificar la compilación de la variante pública.
-- [ ] Maintainers de BD y API, con el PO: corregir autorización y activar la política de valoraciones; validar el flujo con datos sintéticos.
-- [ ] Maintainers de CI e infraestructura: incorporar los análisis, revisar licencias y verificar las reglas de protección de `main` y CODEOWNERS.
-- [ ] Maintainers de web y extensión: ampliar pruebas y validar el onboarding desde un clon limpio con el Equipo C.
+- [ ] **Owners:** verificar quiénes son los owners actuales de GitHub y Supabase (asegurando al menos dos con 2FA) y configurar las reglas efectivas de protección de `main` (`check` y `database` obligatorios, CODEOWNERS, *squash merge* y prohibición de fusión propia).
+- [ ] **Owners y maintainers de seguridad:** completar la auditoría de secretos e historial remoto (`Gitleaks`), retirar `reuniones/` y `docs/qa/`, corregir los enlaces internos rotos en `docs/` y habilitar `SECURITY.md` con contacto confidencial.
+- [ ] **Maintainers de backend:** extraer `credibility.ts` tras `CredibilityProvider` con nuevos parámetros de producción y verificar la compilación y CI de la variante pública con la implementación de referencia.
+- [ ] **Maintainers de BD y API, con el PO:** corregir autorización y activar la política de valoraciones (OBS-01, OBS-02, OBS-05, OBS-06); validar el flujo completo con datos sintéticos.
+- [ ] **Maintainers de CI e infraestructura:** incorporar análisis de secretos, dependencias y CodeQL, generar el SBOM/avisos de licencias de terceros (`LGPL-3.0`, `MPL-2.0`, `CC-BY-4.0`) y publicar `.github/CODEOWNERS` junto al Equipo D.
+- [ ] **Maintainers de web y extensión:** ampliar cobertura de pruebas y validar el onboarding desde un clon limpio junto al Equipo C.
 
 **Conclusión:** Dark-Shield tiene una base técnica organizada y automatizada, pero todavía no está preparado para una apertura formal como proyecto Open Source según el alcance acordado. La primera release pública deberá identificarse como prototipo y quedar condicionada al cierre de los tres riesgos anteriores. La revisión ha sido estática sobre la copia aportada; no se han ejecutado nuevamente los tests, `npm audit` ni los escáneres especializados, ni se ha accedido al GitHub o Supabase remoto.
